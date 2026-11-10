@@ -1,3 +1,4 @@
+import { terrainCellsSchema, type TerrainCell } from './terrain.schema.js';
 import { elevationCellsSchema, type ElevationCell } from './elevation.schema.js';
 import { z } from 'zod';
 
@@ -72,6 +73,7 @@ export interface OccupiedSpace {
 /** Configuração espacial da cena, persistida em `Combat.spatialConfig`. */
 export interface SpatialSceneConfig {
   elevationCells?: ElevationCell[];
+  difficultTerrainCells?: TerrainCell[];
   mode: SpatialMode;
   widthFeet: number;
   heightFeet: number;
@@ -93,6 +95,7 @@ export const spatialPositionSchema = z
 export const spatialSceneConfigSchema = z
   .object({
     elevationCells: elevationCellsSchema.optional(),
+    difficultTerrainCells: terrainCellsSchema.optional(),
     mode: z.enum(SPATIAL_MODES),
     widthFeet: z.number().finite().positive().max(100_000),
     heightFeet: z.number().finite().positive().max(100_000),

@@ -2197,7 +2197,7 @@ export function CombatGrid({
                 tone={gridTone}
               />
 
-              <GridElevations cells={scene.elevationCells} pixelsPerCell={DEFAULT_PIXELS_PER_CELL} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet} />
+              <GridElevations terrain={scene.difficultTerrainCells} cells={scene.elevationCells} pixelsPerCell={DEFAULT_PIXELS_PER_CELL} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet} />
 
               {placed.map((combatant) => (
                 <GridToken

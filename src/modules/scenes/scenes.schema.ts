@@ -1,3 +1,4 @@
+import { terrainCellsSchema } from '../combat/spatial/terrain.schema.js';
 import { elevationCellsSchema } from '../combat/spatial/elevation.js';
 import { z } from 'zod';
 import { SPATIAL_MODES, spatialPositionSchema } from '../combat/spatial/spatial.types.js';
@@ -20,6 +21,7 @@ const sceneNameSchema = z.string().trim().min(1, 'A cena precisa de um nome.').m
 export const sceneSpatialConfigSchema = z
   .object({
     elevationCells: elevationCellsSchema.optional(),
+    difficultTerrainCells: terrainCellsSchema.optional(),
     mode: z.enum(SPATIAL_MODES),
     widthFeet: z.number().finite().min(5).max(100_000).optional(),
     heightFeet: z.number().finite().min(5).max(100_000).optional(),
@@ -48,6 +50,7 @@ export const createSceneSchema = z
  */
 export const updateSceneSchema = z
   .object({
+    removeObstacleIds: z.array(z.string().min(1)).max(1000).optional(),
     name: sceneNameSchema.optional(),
     spatialConfig: sceneSpatialConfigSchema.optional(),
     backgroundImageUrl: sceneBackgroundSchema.optional(),
@@ -57,6 +60,7 @@ export const updateSceneSchema = z
   .strict()
   .superRefine((input, ctx) => {
     const hasChange =
+      Boolean(input.removeObstacleIds?.length) ||
       input.name !== undefined ||
       input.spatialConfig !== undefined ||
       input.backgroundImageUrl !== undefined;

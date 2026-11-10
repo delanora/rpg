@@ -12,7 +12,7 @@ import type {
 import { occupiedSpaceOf } from './occupied-space.js';
 
 export function elevationCellsWithinScene(
-  cells: readonly ElevationCell[],
+  cells: readonly Pick<ElevationCell, 'xFeet' | 'yFeet'>[],
   scene: Pick<SpatialSceneConfig, 'widthFeet' | 'heightFeet'>,
 ): boolean {
   return cells.every(

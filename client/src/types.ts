@@ -2334,6 +2334,7 @@ export interface ElevationCell { xFeet: number; yFeet: number; elevationFeet: nu
 
 export interface SpatialScene {
   elevationCells?: ElevationCell[];
+  difficultTerrainCells?: { xFeet: number; yFeet: number }[];
   mode: 'assisted' | 'grid-2d';
   widthFeet: number;
   heightFeet: number;
@@ -2380,12 +2381,14 @@ export interface Scene {
 /** Configuração espacial aceita no PATCH — dimensões em PÉS, sempre. */
 export interface SceneSpatialPatch {
   elevationCells?: ElevationCell[];
+  difficultTerrainCells?: { xFeet: number; yFeet: number }[];
   mode: SpatialScene['mode'];
   widthFeet?: number;
   heightFeet?: number;
 }
 
 export interface ScenePatch {
+  removeObstacleIds?: string[];
   name?: string;
   spatialConfig?: SceneSpatialPatch;
   /** `null` limpa a imagem de fundo. */

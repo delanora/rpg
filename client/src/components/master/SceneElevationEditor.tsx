@@ -1,3 +1,4 @@
+import { wallTouchesPaintCell } from './scenePaintGeometry';
 import { Icon } from '../Icon';
 import {
   useEffect,
@@ -14,6 +15,7 @@ import { feetToMeters, metersToElevationFeet } from '../../sceneUnits';
 interface Props {
   cursorPalette?: boolean;
   eraseMode?: boolean;
+  terrainMode?: boolean;
   heightValue?: string;
   onHeightChange?: (value: string) => void;
   embedded?: boolean;
@@ -40,6 +42,7 @@ export function SceneElevationEditor({
   onSessionChange,
   cursorPalette = false,
   eraseMode = false,
+  terrainMode = false,
   heightValue,
   onHeightChange,
 }: Props) {
@@ -72,6 +75,13 @@ export function SceneElevationEditor({
   const writing = useRef(false);
   const [uncertain, setUncertain] = useState(false);
   const config = scene.spatialConfig;
+  const erasedWalls = eraseMode
+    ? scene.obstacles.filter((wall) =>
+        [...selection.values()].some((cell) =>
+          wallTouchesPaintCell(wall, cell),
+        ),
+      )
+    : [];
   const stale = selection.size > 0 && draftVersion.current !== scene.version;
   const editable =
     !disabled && !busy && !uncertain && config.mode === 'grid-2d';
@@ -117,13 +127,7 @@ export function SceneElevationEditor({
           yFeet:
             Math.round((start.yFeet + (end.yFeet - start.yFeet) * t) / 5) * 5,
         };
-        if (
-          !eraseMode ||
-          config.elevationCells?.some(
-            (saved) => saved.xFeet === cell.xFeet && saved.yFeet === cell.yFeet,
-          )
-        )
-          next.set(`${cell.xFeet}:${cell.yFeet}`, cell);
+        next.set(`${cell.xFeet}:${cell.yFeet}`, cell);
       }
       return next;
     });
@@ -160,17 +164,33 @@ export function SceneElevationEditor({
       ]),
     );
     for (const [key, cell] of selection) {
-      if (erase || value === 0) cells.delete(key);
+      if (erase) cells.delete(key);
+      else if (terrainMode) continue;
+      else if (value === 0) cells.delete(key);
       else
         cells.set(key, {
           ...cell,
           elevationFeet: metersToElevationFeet(value),
         });
     }
+    const terrain = new Map(
+      (config.difficultTerrainCells ?? []).map((cell) => [
+        `${cell.xFeet}:${cell.yFeet}`,
+        cell,
+      ]),
+    );
+    for (const [key, cell] of selection) {
+      if (erase) terrain.delete(key);
+      else if (terrainMode) terrain.set(key, cell);
+    }
     const intention = pending.current ?? {
       patch: {
+        ...(erase && erasedWalls.length
+          ? { removeObstacleIds: erasedWalls.map((wall) => wall.id) }
+          : {}),
         spatialConfig: {
           ...config,
+          difficultTerrainCells: [...terrain.values()],
           elevationCells: [...cells.values()].sort(
             (a, b) => a.yFeet - b.yFeet || a.xFeet - b.xFeet,
           ),
@@ -212,17 +232,24 @@ export function SceneElevationEditor({
   const cursorForm = cursorPalette ? (
     <form
       className="scene-height-cursor"
-      aria-label="Definir elevação"
+      aria-label={
+        eraseMode
+          ? 'Apagar elementos da cena'
+          : terrainMode
+            ? 'Pintar terreno difícil'
+            : 'Definir elevação'
+      }
       hidden={painting}
       onSubmit={(event) => {
         event.preventDefault();
         void save(eraseMode);
       }}
     >
-      {eraseMode ? (
+      {eraseMode || terrainMode ? (
         <p className="scene-eraser-hint">
-          Borracha de elevações · arraste sobre os quadrados para restaurar o
-          chão.
+          {eraseMode
+            ? 'Borracha universal · arraste para apagar paredes, alturas e terreno difícil.'
+            : 'Terreno difícil · pinte os quadrados que custam movimento extra.'}
         </p>
       ) : (
         <label>
@@ -311,23 +338,27 @@ export function SceneElevationEditor({
       viewBox={`0 0 ${config.widthFeet} ${config.heightFeet}`}
       preserveAspectRatio="none"
       role="group"
-      aria-label="Pincel de elevação"
+      aria-label={
+        eraseMode
+          ? 'Borracha universal'
+          : terrainMode
+            ? 'Pincel de terreno difícil'
+            : 'Pincel de elevação'
+      }
       tabIndex={0}
       onKeyDown={(event) => {
         if (event.key === 'Escape') cancel();
       }}
       onPointerDown={(event) => {
-        if (!editable || (editing && selection.size > 0) || event.button !== 0)
-          return;
+        if (!editable || stale || event.button !== 0) return;
         event.preventDefault();
         setPainting(true);
-        draftVersion.current = scene.version;
+        if (selection.size === 0) draftVersion.current = scene.version;
         stroke.current = {
           pointerId: event.pointerId,
           version: scene.version,
           last: null,
         };
-        setSelection(new Map());
         setError(null);
         svg.current?.setPointerCapture?.(event.pointerId);
         paint(event);
@@ -364,7 +395,19 @@ export function SceneElevationEditor({
         }
       }}
     >
+      <SceneTerrainCells cells={config.difficultTerrainCells ?? []} />
       <SceneElevationCells cells={cells} />
+      {erasedWalls.map((wall) => (
+        <line
+          key={wall.id}
+          className="scene-erased-wall"
+          x1={wall.start.xFeet}
+          y1={wall.start.yFeet}
+          x2={wall.end.xFeet}
+          y2={wall.end.yFeet}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
       {[...selection.entries()].map(([key, cell]) => (
         <rect
           key={key}
@@ -415,7 +458,13 @@ export function SceneElevationEditor({
         {!cursorPalette && editing && selection.size > 0 ? (
           <form
             className="scene-elevation-popover"
-            aria-label="Definir elevação"
+            aria-label={
+              eraseMode
+                ? 'Apagar elementos da cena'
+                : terrainMode
+                  ? 'Pintar terreno difícil'
+                  : 'Definir elevação'
+            }
             onSubmit={(event) => {
               event.preventDefault();
               void save();
@@ -496,5 +545,25 @@ function ElevationSquare({ cell }: { cell: ElevationCell }) {
         {feetToMeters(cell.elevationFeet).toLocaleString('pt-BR')} m
       </text>
     </g>
+  );
+}
+
+/** Marcação visual compartilhada pela prévia e pelo editor. */
+export function SceneTerrainCells({
+  cells,
+}: {
+  cells: readonly { xFeet: number; yFeet: number }[];
+}) {
+  return (
+    <>
+      {cells.map((cell) => (
+        <g className="scene-terrain-cell" key={`${cell.xFeet}:${cell.yFeet}`}>
+          <rect x={cell.xFeet} y={cell.yFeet} width={5} height={5} />
+          <path
+            d={`M${cell.xFeet + 0.7} ${cell.yFeet + 3.8}l1.1-1.6 1 1 1.4-2`}
+          />
+        </g>
+      ))}
+    </>
   );
 }

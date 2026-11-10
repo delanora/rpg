@@ -83,8 +83,8 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     const position = point(event); if (!position) return;
     event.preventDefault(); svg.current?.focus({preventScroll:true}); setError(null); setMessage(null);
     if (!placing || !draft) {
-      setSegments([]);
-      setDraft({ wallId: null, version: scene.version, wall: { start: position, end: position,
+      if(!draft) setSegments([]);
+      setDraft({ wallId: null, version: draft?.version ?? scene.version, wall: { start: position, end: position,
         blocksMovement: true, blocksSight: true, blocksTargeting: true, ...wallSettings } }); setPlacing(true);
     } else {
       if (position.xFeet === draft.wall.start.xFeet && position.yFeet === draft.wall.start.yFeet) return;
@@ -266,6 +266,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
       </fieldset> : null}
     </div>
     {draft && !eraseMode ? <div className="scene-wall-toolbar">
+      {placing && segments.length > 0 ? <button type="button" className="btn btn-small" disabled={!editable || stale} onClick={()=>setPlacing(false)}>Novo traço</button> : null}
       <button type="button" data-scene-save-draft className="btn btn-primary btn-small" disabled={!editable || stale || (placing && segments.length === 0) || Boolean(invalid)}
         onClick={() => void submit(draft.wallId ? { kind: 'update', wallId: draft.wallId, wall: draft.wall } :
           segments.length > 1 ? { kind: 'create-many', walls: segments } :

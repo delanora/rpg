@@ -36,7 +36,7 @@ import {
   type MovementPathEvaluation,
   formatMetersPtBr,
 } from './spatial-movement.js';
-import { walkingMovementTerrain } from './movement-terrain.js';
+import { sceneMovementTerrain } from './movement-terrain.js';
 import {
   opportunityAttackMovementGate,
   type MovementReactionGateResult,
@@ -254,7 +254,7 @@ export function evaluateMovementForState(
       economy.movementUsed,
     ),
     speedZero: effectiveSpeedOf(combatant) <= 0,
-    terrain: walkingMovementTerrain,
+    terrain: sceneMovementTerrain(effectiveSceneConfigOf(combat).difficultTerrainCells),
     obstacles: (combat.scene?.obstacles ?? []).map(obstacleDtoOf),
     revealBlockers,
   });

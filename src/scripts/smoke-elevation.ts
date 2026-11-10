@@ -1,3 +1,4 @@
+import { smokeSceneTerrain } from './smoke-scene-terrain.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
@@ -94,6 +95,7 @@ export async function smokeElevation(base: string) {
       response.status === 201 || response.status === 200,
     );
     let scene = response.data.scene;
+    scene = await smokeSceneTerrain(http,scene,hero,users[1]!,locality.id,tokens[1]!);
     const cells = [
       { xFeet: 5, yFeet: 0, elevationFeet: 10 },
       { xFeet: 10, yFeet: 0, elevationFeet: 10 },

@@ -1,3 +1,4 @@
+import type { TerrainCell } from '../combat/spatial/terrain.schema.js';
 import { elevationCellsWithinScene, type ElevationCell } from '../combat/spatial/elevation.js';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
@@ -50,8 +51,9 @@ export interface SceneOperationInput {
   operationId: string;
   /** Campos do alvo da operação (entram no fingerprint de propósito). */
   name?: string;
-  spatialConfig?: { mode: SpatialMode; widthFeet?: number; heightFeet?: number; elevationCells?: ElevationCell[] };
+  spatialConfig?: { mode: SpatialMode; widthFeet?: number; heightFeet?: number; elevationCells?: ElevationCell[]; difficultTerrainCells?: TerrainCell[] };
   backgroundImageUrl?: string | null;
+  removeObstacleIds?: string[];
   obstacleId?: string;
   obstacle?: Partial<SpatialObstacleShape>;
   obstacles?: SpatialObstacleShape[];
@@ -120,11 +122,12 @@ export async function assertSceneNotInUse(
  */
 function mergedSpatialConfig(
   current: SpatialSceneConfig | null,
-  patch: { mode: SpatialMode; widthFeet?: number; heightFeet?: number; elevationCells?: ElevationCell[] },
+  patch: { mode: SpatialMode; widthFeet?: number; heightFeet?: number; elevationCells?: ElevationCell[]; difficultTerrainCells?: TerrainCell[] },
 ): SpatialSceneConfig {
   const base = current ?? defaultSpatialScene();
   return {
     ...(patch.elevationCells !== undefined || base.elevationCells ? { elevationCells: patch.elevationCells ?? base.elevationCells } : {}),
+    ...(patch.difficultTerrainCells !== undefined || base.difficultTerrainCells ? { difficultTerrainCells: patch.difficultTerrainCells ?? base.difficultTerrainCells } : {}),
     mode: patch.mode,
     widthFeet: patch.widthFeet ?? base.widthFeet,
     heightFeet: patch.heightFeet ?? base.heightFeet,
@@ -163,6 +166,7 @@ export async function createScene(
   if (locality === 0) throw new HttpError('Localidade não encontrada.', 404);
 
   const config = input.spatialConfig ? mergedSpatialConfig(null, input.spatialConfig) : null;
+  if (config && !elevationCellsWithinScene(config.difficultTerrainCells ?? [], config)) throw new HttpError('O terreno precisa ficar dentro da cena.', 400, 'VALIDATION_ERROR');
   if (config && !elevationCellsWithinScene(config.elevationCells ?? [], config)) throw new HttpError('A elevação precisa ficar dentro da cena.', 400, 'VALIDATION_ERROR');
   const scene = await prisma.scene.create({
     data: {
@@ -190,6 +194,7 @@ export async function updateScene(
       sceneId,
       expectedVersion: input.expectedVersion,
       operationId: input.operationId,
+      removeObstacleIds: input.removeObstacleIds,
       name: input.name,
       spatialConfig: input.spatialConfig,
       backgroundImageUrl: input.backgroundImageUrl,
@@ -197,17 +202,21 @@ export async function updateScene(
     'scene-update',
     async (db, scene) => {
       const data: Prisma.SceneUpdateInput = {};
+      const removals = new Set(input.removeObstacleIds ?? []);
+      if ([...removals].some(id => !scene.obstacles?.some(wall => wall.id === id))) throw new HttpError('Uma parede selecionada não pertence à cena.', 400, 'VALIDATION_ERROR');
+      if(removals.size) await db.spatialObstacle.deleteMany({where:{sceneId:scene.id,id:{in:[...removals]}}});
       if (input.name !== undefined) data.name = input.name;
       if (input.backgroundImageUrl !== undefined) {
         data.backgroundImageUrl = input.backgroundImageUrl;
       }
       if (input.spatialConfig !== undefined) {
         const next = mergedSpatialConfig(spatialSceneOf(scene.spatialConfig), input.spatialConfig);
+        if (!elevationCellsWithinScene(next.difficultTerrainCells ?? [], next)) throw new HttpError('Um terreno difícil ficaria fora da cena.', 409, 'SCENE_RESIZE_CONFLICT');
         if (!elevationCellsWithinScene(next.elevationCells ?? [], next)) throw new HttpError('Uma elevação ficaria fora da cena.', 409, 'SCENE_RESIZE_CONFLICT');
         // Reduzir a cena nunca move nem apaga parede: a alteração inteira é
         // recusada se alguma parede sair dos novos limites.
         const orphan = (scene.obstacles ?? []).find(
-          (obstacle) => !obstacleWithinScene(obstacleSegmentOf(obstacle), next),
+          (obstacle) => !removals.has(obstacle.id) && !obstacleWithinScene(obstacleSegmentOf(obstacle), next),
         );
         if (orphan) {
           throw new HttpError(

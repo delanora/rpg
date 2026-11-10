@@ -1,4 +1,4 @@
-import { SceneElevationCells } from './SceneElevationEditor';
+import { SceneElevationCells, SceneTerrainCells } from './SceneElevationEditor';
 import { SceneMapScreen } from './SceneMapScreen';
 import { SceneMapEditor } from './SceneMapEditor';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -390,6 +390,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
         </div>
         <div className="scene-map-overview">
           <ScenePreview scene={scene} imageFailed={imageFailed} onImageError={() => setImageFailed(true)} overview overlay={<svg className="scene-map-saved-layer" aria-hidden="true" viewBox={`0 0 ${config.widthFeet} ${config.heightFeet}`} preserveAspectRatio="none">
+            <SceneTerrainCells cells={config.difficultTerrainCells ?? []} />
             <SceneElevationCells cells={config.elevationCells ?? []} />
             {scene.obstacles.map(wall => <line key={wall.id} className={`scene-wall-line ${!wall.blocksMovement ? 'scene-wall-line--passable' : ''}`} x1={wall.start.xFeet} y1={wall.start.yFeet} x2={wall.end.xFeet} y2={wall.end.yFeet} vectorEffect="non-scaling-stroke" />)}
           </svg>} />

@@ -17995,3 +17995,7 @@ body:has(.app-shell.has-ongoing-combat) .roll-log-fab:is(:hover, :focus-visible)
 .grid-elevations .is-low rect { fill: #538aad20; stroke: #83b1d066; }
 .grid-elevations text { fill: #fff1c7; font: 1px sans-serif; paint-order: stroke; stroke: #15120c; stroke-width: .22px; opacity: .85; }
 .combat-elevation-route { width: min(100%, 20rem); max-height: 12rem; background: #16110d; border-radius: .35rem; }
+
+/* Terreno difícil pintado na cena, apresentado no grid de combate. */
+.grid-elevations .grid-terrain-cell rect { fill: #b87b292e; stroke: #d7a75580; stroke-width: .05; }
+.grid-elevations .grid-terrain-cell path { fill: none; stroke: #e9c87b; stroke-width: .18; opacity: .7; }

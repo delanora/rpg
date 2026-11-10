@@ -3,18 +3,20 @@ import type { ElevationCell, SpatialPosition } from '../../types';
 /** Overlay da superfície, no mesmo espaço transformado do mapa e dos tokens. */
 export function GridElevations({
   cells,
+  terrain,
   pixelsPerCell,
   widthFeet,
   heightFeet,
   path,
 }: {
   cells?: ElevationCell[];
+  terrain?: SpatialPosition[];
   pixelsPerCell: number;
   widthFeet: number;
   heightFeet: number;
   path?: SpatialPosition[];
 }) {
-  if (!cells?.length && !path?.length) return null;
+  if (!cells?.length && !path?.length && !terrain?.length) return null;
   return (
     <svg
       className="grid-elevations"
@@ -26,6 +28,17 @@ export function GridElevations({
         height: (heightFeet / 5) * pixelsPerCell,
       }}
     >
+      {(terrain ?? []).map((cell) => (
+        <g
+          className="grid-terrain-cell"
+          key={`terrain:${cell.xFeet}:${cell.yFeet}`}
+        >
+          <rect x={cell.xFeet} y={cell.yFeet} width={5} height={5} />
+          <path
+            d={`M${cell.xFeet + 0.7} ${cell.yFeet + 3.8}l1.1-1.6 1 1 1.4-2`}
+          />
+        </g>
+      ))}
       {(cells ?? []).map((cell) => (
         <g
           key={`${cell.xFeet}:${cell.yFeet}`}

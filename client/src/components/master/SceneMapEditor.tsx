@@ -19,9 +19,10 @@ import { SceneWallsEditor } from './SceneWallsEditor';
 import {
   SceneElevationEditor,
   SceneElevationCells,
+  SceneTerrainCells,
 } from './SceneElevationEditor';
 
-type Tool = 'select' | 'wall' | 'elevation' | 'erase';
+type Tool = 'select' | 'wall' | 'elevation' | 'erase' | 'terrain';
 interface Props {
   fullScreen?: boolean;
   onSessionChange?: (locked: boolean) => void;
@@ -45,6 +46,7 @@ const TOOLS: { id: Tool; label: string; icon: IconName }[] = [
   { id: 'wall', label: 'Desenhar parede', icon: 'wall' },
   { id: 'elevation', label: 'Pincel de elevação', icon: 'brush' },
   { id: 'erase', label: 'Borracha', icon: 'trash' },
+  { id: 'terrain', label: 'Terreno difícil', icon: 'wind' },
 ];
 
 /** Uma superfície, uma ferramenta ativa e os mesmos contratos de escrita. */
@@ -59,17 +61,14 @@ export function SceneMapEditor({
   onSessionChange,
 }: Props) {
   const [tool, setTool] = useState<Tool>('select');
-  const [eraseTarget, setEraseTarget] = useState<'wall' | 'elevation'>(
-    'elevation',
-  );
-  const erasingHeight = tool === 'erase' && eraseTarget === 'elevation';
-  const heightTool = tool === 'elevation' || erasingHeight;
+  const heightTool =
+    tool === 'elevation' || tool === 'erase' || tool === 'terrain';
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [heightValue, setHeightValue] = useState('0');
   const root = useRef<HTMLDivElement>(null);
   const [radial, setRadial] = useState<{
     point: { x: number; y: number };
-    phase: 'tools' | 'wall' | 'cover' | 'erase';
+    phase: 'tools' | 'wall' | 'cover';
   } | null>(null);
   const [wallSettings, setWallSettings] = useState<SceneWallSettings>({
     blocksMovement: true,
@@ -100,7 +99,7 @@ export function SceneMapEditor({
   const zoom = camera.camera.zoom;
   const openMenu = (
     point: { x: number; y: number },
-    phase: 'tools' | 'wall' | 'cover' | 'erase',
+    phase: 'tools' | 'wall' | 'cover',
   ) => {
     camera.stop();
     root.current
@@ -114,151 +113,147 @@ export function SceneMapEditor({
   };
   const wallMenu = (point: { x: number; y: number }) => openMenu(point, 'wall');
   const radialOptions: SceneRadialOption[] =
-    radial?.phase === 'erase'
-      ? (['wall', 'elevation'] as const).map((target) => ({
-          id: target,
-          label: target === 'wall' ? 'Apagar paredes' : 'Apagar elevações',
-          caption: target === 'wall' ? 'Paredes' : 'Alturas',
-          icon: target === 'wall' ? 'wall' : 'brush',
+    radial?.phase === 'cover'
+      ? (
+          [
+            ['none', 'Nenhuma'],
+            ['half', 'Meia cobertura'],
+            ['three-quarters', 'Três quartos'],
+            ['total', 'Cobertura total'],
+          ] as const
+        ).map(([level, label]) => ({
+          id: level,
+          label,
+          caption:
+            level === 'three-quarters'
+              ? '¾'
+              : level === 'half'
+                ? '½'
+                : level === 'none'
+                  ? 'Nenhuma'
+                  : 'Total',
+          icon: 'shield',
+          checked: wallSettings.coverLevel === level,
           action: () => {
-            setEraseTarget(target);
-            setTool('erase');
-            setInspectorOpen(target === 'wall');
-            closeRadial();
+            setWallSettings((settings) => ({
+              ...settings,
+              coverLevel: level,
+              blocksTargeting: level === 'total',
+            }));
+            setRadial((value) => (value ? { ...value, phase: 'wall' } : null));
           },
         }))
-      : radial?.phase === 'cover'
-        ? (
-            [
-              ['none', 'Nenhuma'],
-              ['half', 'Meia cobertura'],
-              ['three-quarters', 'Três quartos'],
-              ['total', 'Cobertura total'],
-            ] as const
-          ).map(([level, label]) => ({
-            id: level,
-            label,
-            caption:
-              level === 'three-quarters'
-                ? '¾'
-                : level === 'half'
-                  ? '½'
-                  : level === 'none'
-                    ? 'Nenhuma'
-                    : 'Total',
-            icon: 'shield',
-            checked: wallSettings.coverLevel === level,
-            action: () => {
-              setWallSettings((settings) => ({
-                ...settings,
-                coverLevel: level,
-                blocksTargeting: level === 'total',
-              }));
-              setRadial((value) =>
-                value ? { ...value, phase: 'wall' } : null,
-              );
+      : radial?.phase === 'wall'
+        ? [
+            {
+              id: 'cover',
+              label: 'Escolher cobertura',
+              caption:
+                wallSettings.coverLevel === 'half'
+                  ? 'Cobertura ½'
+                  : wallSettings.coverLevel === 'three-quarters'
+                    ? 'Cobertura ¾'
+                    : wallSettings.coverLevel === 'none'
+                      ? 'Sem cobertura'
+                      : 'Total',
+              icon: 'shield',
+              action: () =>
+                setRadial((value) =>
+                  value ? { ...value, phase: 'cover' } : null,
+                ),
             },
-          }))
-        : radial?.phase === 'wall'
-          ? [
-              {
-                id: 'cover',
-                label: 'Escolher cobertura',
-                caption:
-                  wallSettings.coverLevel === 'half'
-                    ? 'Cobertura ½'
-                    : wallSettings.coverLevel === 'three-quarters'
-                      ? 'Cobertura ¾'
-                      : wallSettings.coverLevel === 'none'
-                        ? 'Sem cobertura'
-                        : 'Total',
-                icon: 'shield',
-                action: () =>
-                  setRadial((value) =>
-                    value ? { ...value, phase: 'cover' } : null,
-                  ),
+            {
+              id: 'sight',
+              label: 'Bloqueia visão',
+              caption: wallSettings.blocksSight ? 'Opaca' : 'Transparente',
+              icon: wallSettings.blocksSight ? 'eye-off' : 'eye',
+              checked: wallSettings.blocksSight,
+              action: () =>
+                setWallSettings((settings) => ({
+                  ...settings,
+                  blocksSight: !settings.blocksSight,
+                })),
+            },
+            {
+              id: 'movement',
+              label: 'Bloqueia movimento',
+              caption: wallSettings.blocksMovement ? 'Sólida' : 'Passável',
+              icon: 'boots',
+              checked: wallSettings.blocksMovement,
+              action: () =>
+                setWallSettings((settings) => ({
+                  ...settings,
+                  blocksMovement: !settings.blocksMovement,
+                })),
+            },
+            {
+              id: 'draw',
+              label: 'Começar a desenhar parede',
+              caption: 'Desenhar',
+              icon: 'wall',
+              action: () => {
+                setTool('wall');
+                closeRadial();
+                root.current?.focus({ preventScroll: true });
               },
-              {
-                id: 'sight',
-                label: 'Bloqueia visão',
-                caption: wallSettings.blocksSight ? 'Opaca' : 'Transparente',
-                icon: wallSettings.blocksSight ? 'eye-off' : 'eye',
-                checked: wallSettings.blocksSight,
-                action: () =>
-                  setWallSettings((settings) => ({
-                    ...settings,
-                    blocksSight: !settings.blocksSight,
-                  })),
+            },
+          ]
+        : [
+            {
+              id: 'wall',
+              label: 'Configurar parede',
+              caption: 'Parede',
+              icon: 'wall',
+              disabled: sessionLocked,
+              action: () =>
+                setRadial((value) =>
+                  value ? { ...value, phase: 'wall' } : null,
+                ),
+            },
+            {
+              id: 'elevation',
+              label: 'Pincel de elevação',
+              caption: 'Altura',
+              icon: 'brush',
+              disabled: sessionLocked,
+              action: () => {
+                selectHeight();
               },
-              {
-                id: 'movement',
-                label: 'Bloqueia movimento',
-                caption: wallSettings.blocksMovement ? 'Sólida' : 'Passável',
-                icon: 'boots',
-                checked: wallSettings.blocksMovement,
-                action: () =>
-                  setWallSettings((settings) => ({
-                    ...settings,
-                    blocksMovement: !settings.blocksMovement,
-                  })),
+            },
+            {
+              id: 'erase',
+              label: 'Borracha',
+              caption: 'Borracha',
+              icon: 'trash',
+              disabled: sessionLocked,
+              action: () => {
+                setTool('erase');
+                closeRadial();
               },
-              {
-                id: 'draw',
-                label: 'Começar a desenhar parede',
-                caption: 'Desenhar',
-                icon: 'wall',
-                action: () => {
-                  setTool('wall');
-                  closeRadial();
-                  root.current?.focus({ preventScroll: true });
-                },
+            },
+            {
+              id: 'terrain',
+              label: 'Terreno difícil',
+              caption: 'Terreno',
+              icon: 'wind',
+              disabled: sessionLocked,
+              action: () => {
+                setTool('terrain');
+                closeRadial();
               },
-            ]
-          : [
-              {
-                id: 'wall',
-                label: 'Configurar parede',
-                caption: 'Parede',
-                icon: 'wall',
-                disabled: sessionLocked,
-                action: () =>
-                  setRadial((value) =>
-                    value ? { ...value, phase: 'wall' } : null,
-                  ),
+            },
+            {
+              id: 'select',
+              label: 'Selecionar parede',
+              caption: 'Selecionar',
+              icon: 'cursor',
+              disabled: sessionLocked,
+              action: () => {
+                setTool('select');
+                closeRadial();
               },
-              {
-                id: 'elevation',
-                label: 'Pincel de elevação',
-                caption: 'Altura',
-                icon: 'brush',
-                disabled: sessionLocked,
-                action: () => {
-                  selectHeight();
-                },
-              },
-              {
-                id: 'erase',
-                label: 'Borracha',
-                caption: 'Borracha',
-                icon: 'trash',
-                disabled: sessionLocked,
-                action: () =>
-                  setRadial((value) =>
-                    value ? { ...value, phase: 'erase' } : null,
-                  ),
-              },
-              {
-                id: 'select',
-                label: 'Selecionar parede',
-                caption: 'Selecionar',
-                icon: 'cursor',
-                disabled: sessionLocked,
-                action: () => {
-                  setTool('select');
-                  closeRadial();
-                },
-              },
-            ];
+            },
+          ];
 
   function canvas(overlay: ReactNode, _scale: number, options?: ReactNode) {
     const savedLayer = (
@@ -281,7 +276,10 @@ export function SceneMapEditor({
             />
           ))
         ) : (
-          <SceneElevationCells cells={config.elevationCells ?? []} />
+          <>
+            <SceneTerrainCells cells={config.difficultTerrainCells ?? []} />
+            <SceneElevationCells cells={config.elevationCells ?? []} />
+          </>
         )}
       </svg>
     );
@@ -393,12 +391,9 @@ export function SceneMapEditor({
               disabled={!editingAllowed || (sessionLocked && item.id !== tool)}
               onClick={(event) => {
                 if (sessionLocked) return;
-                if (item.id === 'erase') {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  openMenu(
-                    { x: rect.left + rect.width / 2, y: rect.bottom + 108 },
-                    'erase',
-                  );
+                if (item.id === 'erase' || item.id === 'terrain') {
+                  setTool(item.id);
+                  closeRadial();
                 } else if (item.id === 'wall') {
                   const rect = event.currentTarget.getBoundingClientRect();
                   wallMenu({
@@ -469,11 +464,7 @@ export function SceneMapEditor({
           </button>
         </div>
         <span className="scene-map-tool-name" role="status">
-          {tool === 'erase'
-            ? eraseTarget === 'wall'
-              ? 'Borracha de paredes'
-              : 'Borracha de elevações'
-            : active.label}
+          {active.label}
         </span>
       </div>
     );
@@ -543,7 +534,8 @@ export function SceneMapEditor({
         <SceneElevationEditor
           embedded
           cursorPalette
-          eraseMode={erasingHeight}
+          eraseMode={tool === 'erase'}
+          terrainMode={tool === 'terrain'}
           heightValue={heightValue}
           onHeightChange={setHeightValue}
           scene={scene}
@@ -559,12 +551,9 @@ export function SceneMapEditor({
           scene={scene}
           disabled={disabled}
           workspace={fullScreen}
-          eraseMode={tool === 'erase'}
           wallSettings={wallSettings}
           activeTool={tool === 'wall' ? 'draw' : 'select'}
-          onToolChange={(next) => {
-            if (tool !== 'erase') setTool(next === 'draw' ? 'wall' : 'select');
-          }}
+          onToolChange={(next) => setTool(next === 'draw' ? 'wall' : 'select')}
           sharedZoom={zoom}
           onSessionChange={reportSession}
           onMutate={onWallMutation}
@@ -581,9 +570,7 @@ export function SceneMapEditor({
               ? 'Ferramentas do mapa'
               : radial.phase === 'wall'
                 ? 'Parede'
-                : radial.phase === 'erase'
-                  ? 'Borracha'
-                  : 'Cobertura'
+                : 'Cobertura'
           }
           options={radialOptions}
           onClose={closeRadial}

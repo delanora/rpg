@@ -467,3 +467,7 @@
 .scene-eraser-confirm { position: fixed; z-index: 1250; bottom: 5rem; left: 50%; transform: translateX(-50%); width: min(22rem,calc(100vw - 2rem)); background: var(--surface); border: 1px solid var(--gold-hair); box-shadow: 0 5px 20px #0008; }
 
 .scene-overlay--erase .scene-elevation-selected { fill: color-mix(in srgb,var(--danger) 25%,transparent); stroke: var(--danger); }
+
+.scene-terrain-cell rect { fill: #b87b292e; stroke: #d7a75580; stroke-width: .05; }
+.scene-terrain-cell path { fill: none; stroke: #e9c87b; stroke-width: .18; opacity: .7; }
+.scene-erased-wall { stroke: var(--danger); stroke-width: 5; pointer-events: none; }

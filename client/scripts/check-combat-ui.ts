@@ -2905,7 +2905,7 @@ check(
 );
 check(
   'CB182) grid continua SEM Movement/Cover/LoS/AoE (a distância vem do servidor)',
-  !/movementCost|movementRemaining|lineOfSight|coverLevel|areaOfEffect|difficultTerrain/i.test(
+  !/movementCost|movementRemaining|lineOfSight|coverLevel|areaOfEffect|difficultTerrain(?!Cells)/i.test(
     `${combatGridSource}${gridMathSource}${gridTokenSource}${gridTraySource}${gridSceneSource}`
   )
 );
