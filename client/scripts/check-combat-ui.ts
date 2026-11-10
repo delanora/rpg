@@ -5343,7 +5343,7 @@ check(
 
   check(
     'SC9) imagem de fundo reutiliza o pipeline EXISTENTE de upload (sem storage/endpoint novo, sem base64 na cena)',
-    editorSource.includes('const payload = await fileToImagePayload(file);') &&
+    editorSource.includes('const payload = await fileToImagePayload(file, { preserveOriginal: true });') &&
       editorSource.includes("uploadImage(payload.dataUrl, payload.name, 'localities')") &&
       editorSource.includes('{ backgroundImageUrl: stored.url }') &&
       editorSource.includes('{ backgroundImageUrl: null }') &&

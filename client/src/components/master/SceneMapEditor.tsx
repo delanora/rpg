@@ -369,7 +369,7 @@ export function SceneMapEditor({
             {savedLayer}
             {overlay}
           </>,
-          1,
+          zoom,
         )}
         <div
           className="scene-map-tools"

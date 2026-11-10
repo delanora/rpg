@@ -355,7 +355,7 @@
 
 /* Navegação por câmera, sem barras de rolagem e sem alterar a geometria da cena. */
 .scene-map-editor .scene-wall-viewport { position: relative; height: clamp(20rem, 60vh, 42rem); max-height: none; overflow: hidden; overscroll-behavior: none; }
-.scene-map-editor .scene-preview.scene-preview--editable { position: absolute; top: 0; left: 0; transform-origin: 0 0; transform: translate(var(--scene-editor-pan-x, 0px), var(--scene-editor-pan-y, 0px)) scale(var(--scene-editor-zoom, 1)); will-change: transform; }
+.scene-map-editor .scene-preview.scene-preview--editable { position: absolute; top: 0; left: 0; transform-origin: 0 0; transform: translate(var(--scene-editor-pan-x, 0px), var(--scene-editor-pan-y, 0px)); }
 .scene-map-canvas:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .scene-map-shortcuts { margin: .5rem 0 0; color: var(--ink-soft); font-size: .75rem; }
 .scene-editor-radial { position: fixed; z-index: 1300; border: 1px solid var(--gold-hair); border-radius: 50%; background: var(--surface-4); box-shadow: 0 10px 32px #0008, inset 0 0 0 4px var(--surface); }
@@ -469,3 +469,5 @@
 .scene-erased-wall { stroke: var(--danger); stroke-width: 5; pointer-events: none; }
 
 .scene-terrain-selected { fill: #f59e0b66; stroke: #f59e0b; }
+/* A grade é redesenhada no tamanho do zoom, com traço fino em pixels de tela. */
+.scene-map-editor .spatial-grid-overlay path { vector-effect: non-scaling-stroke; stroke-width: 1px; }

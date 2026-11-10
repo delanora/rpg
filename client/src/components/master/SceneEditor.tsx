@@ -153,10 +153,9 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
     setError(null);
     setNotice(null);
     try {
-      // Pipeline EXISTENTE de imagem: redimensiona no navegador e grava em
-      // `/uploads/...`. A cena guarda só a URL — nunca um dado embutido nem um
-      // storage novo.
-      const payload = await fileToImagePayload(file);
+      // O mesmo upload guarda o mapa original, sem a redução usada em retratos.
+      // A cena persiste somente a URL e mantém o mesmo limite de 5 MB.
+      const payload = await fileToImagePayload(file, { preserveOriginal: true });
       const stored = await uploadImage(payload.dataUrl, payload.name, 'localities');
       setImageFailed(false);
       // O PATCH passa pelo MESMO caminho idempotente das outras mutações — não
@@ -318,7 +317,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
       <Section
         title="Imagem de fundo"
         icon="star"
-        subtitle="Opcional — a cena funciona sem ela"
+        subtitle="Opcional · imagem original PNG, JPEG, WEBP ou GIF de até 5 MB"
       >
         {scene.backgroundImageUrl && !imageFailed ? (
           <figure className="scene-background-preview"><img src={scene.backgroundImageUrl} alt={`Imagem de fundo de ${scene.name}`} onError={() => setImageFailed(true)} /><figcaption>Imagem atual do mapa</figcaption></figure>

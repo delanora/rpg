@@ -107,9 +107,21 @@ export interface StoredImage {
 
 /**
  * Lê um arquivo de imagem e devolve uma data URL reduzida (máx. 1600px no
- * maior lado). Diminuir antes de enviar evita trafegar fotos de vários MB.
+ * maior lado). Mapas podem preservar os bytes originais, respeitando 5 MB.
  */
-export async function fileToImagePayload(file: File): Promise<{ dataUrl: string; name: string }> {
+export async function fileToImagePayload(file: File, options: { preserveOriginal?: boolean } = {}): Promise<{ dataUrl: string; name: string }> {
+  // Mapas precisam da resolução original no zoom; os outros usos mantêm a redução existente.
+  if (options.preserveOriginal) {
+    if (!['image/png','image/jpeg','image/jpg','image/webp','image/gif'].includes(file.type)) throw new Error('Use uma imagem PNG, JPEG, WEBP ou GIF.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('A imagem é grande demais (máximo de 5 MB).');
+    const dataUrl = await new Promise<string>((resolve,reject) => {
+      const reader = new FileReader();
+      reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Não foi possível ler a imagem.'));
+      reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+      reader.readAsDataURL(file);
+    });
+    return {dataUrl,name:file.name};
+  }
   const maxSide = 1600;
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));

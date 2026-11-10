@@ -18,6 +18,7 @@ for (const key of [
   'MouseEvent',
   'KeyboardEvent',
   'localStorage',
+  'FileReader',
   'MutationObserver',
 ])
   globals[key] =
@@ -522,6 +523,15 @@ try {
   await click('Salvar traçado (2)');
   const batch = wallPayloads.at(-1) as {kind:string;walls:{start:{yFeet:number}}[]};
   check('Paredes separadas acumulam sem ligar os traços e salvam num lote', walls === wallsBeforeBatch+1 && batch.kind === 'create-many' && batch.walls.length===2 && batch.walls[0].start.yFeet !== batch.walls[1].start.yFeet);
+  const {fileToImagePayload} = await import('../src/api');
+  const originalBytes = new Uint8Array([137,80,78,71,13,10,26,10,1,2,3,4]);
+  const originalFile = new dom.window.File([originalBytes], 'mapa-original.png', {type:'image/png'});
+  const originalPayload = await fileToImagePayload(originalFile as unknown as File, {preserveOriginal:true});
+  check('Upload de mapa preserva exatamente os bytes originais', originalPayload.name === originalFile.name && originalPayload.dataUrl === `data:image/png;base64,${Buffer.from(originalBytes).toString('base64')}`);
+  await assert.rejects(fileToImagePayload(new dom.window.File(['texto'],'mapa.svg',{type:'image/svg+xml'}) as unknown as File,{preserveOriginal:true}),/PNG/);
+  check('Mapa original recusa formato não aceito antes do envio',true);
+  await assert.rejects(fileToImagePayload(new dom.window.File([new Uint8Array(5*1024*1024+1)],'grande.png',{type:'image/png'}) as unknown as File,{preserveOriginal:true}),/5 MB/);
+  check('Mapa original respeita o limite de 5 MB do servidor',true);
   console.log(`${checks} verificações do editor unificado aprovadas.`);
 } finally {
   await act(async () => root.unmount());
