@@ -1,3 +1,4 @@
+import type { AreaReading } from './areaQueryApi';
 import { GridElevations } from './GridElevations';
 import { requestElevation } from './elevationApi';
 import { GridRadialMenu } from './GridRadialMenu';
@@ -309,6 +310,7 @@ export function CombatGrid({
   const [radial, setRadial] = useState<{ origin: SpatialPosition; position: SpatialPosition; point: Point2D } | null>(null);
   const [areaRequest, setAreaRequest] = useState<(AreaPreviewRequest & { scope: string }) | null>(null);
   const areaRequestId = useRef(0);
+  const [areaReadings,setAreaReadings] = useState<AreaReading[]>([]);
   const [ruler, setRuler] = useState<RulerState | null>(null);
   const [quickRuler, setQuickRuler] = useState(false);
   const [hoverTokenId, setHoverTokenId] = useState<string | null>(null);
@@ -2201,6 +2203,7 @@ export function CombatGrid({
 
               {placed.map((combatant) => (
                 <GridToken
+                  areaStatus={isMaster ? areaReadings.find(reading=>reading.combatantId===combatant.id)?.affected : undefined}
                   isMaster={isMaster}
                   showNumber={!!combatant.creatureId && numberedCreatures.has(combatant.creatureId)}
                   onToggleVisibility={isMaster ? id => void toggleVisibility(id) : undefined}
@@ -2287,6 +2290,8 @@ export function CombatGrid({
           </div>
 
           <GridAreaPreview
+            assessmentContext={isMaster ? {combatId:combat.id,version:combat.version} : null}
+            onTargets={setAreaReadings}
             key={areaSceneKey}
             camera={camera} geometry={geometry} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet}
             request={areaRequest?.scope === areaSceneKey ? areaRequest : null}

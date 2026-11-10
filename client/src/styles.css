@@ -17999,3 +17999,19 @@ body:has(.app-shell.has-ongoing-combat) .roll-log-fab:is(:hover, :focus-visible)
 /* Terreno difícil pintado na cena, apresentado no grid de combate. */
 .grid-elevations .grid-terrain-cell rect { fill: #f59e0b55; stroke: #f59e0bcc; stroke-width: .1; }
 .grid-elevations .grid-terrain-cell path { fill: none; stroke: #ffb347; stroke-width: .22; opacity: 1; }
+
+/* Resultado de área fornecido pelo servidor, visível somente ao Mestre. */
+.grid-area-assessment { flex-basis: 100%; max-width: 25rem; font-size: var(--text-small); padding: .45rem; border-top: 1px solid var(--line); }
+.grid-area-assessment p, .grid-area-assessment ul { margin: .3rem 0; }
+.grid-area-assessment ul { max-height: 10rem; overflow-y: auto; list-style: none; padding: 0; }
+.grid-area-assessment .is-hit { color: #f5a623; }
+.grid-area-assessment .is-uncertain { color: var(--ink-soft); }
+.grid-area-assessment small { display: block; color: var(--ink-faint); }
+.grid-area-controls input { max-width: 5rem; padding: .2rem; font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.grid-token.is-area-hit { outline: 2px solid #f5a623; outline-offset: 4px; }
+.grid-token.is-area-uncertain { outline: 2px dashed #e7cf80; outline-offset: 4px; }
+
+.grid-area-controls.has-assessment { width: min(26rem,calc(100% - 1rem)); }
+.grid-area-controls.has-assessment .grid-area-assessment { box-sizing: border-box; max-width: 100%; }
+
+.grid-area-decisions { display: inline-flex; gap: .3rem; margin: .3rem .5rem; }

@@ -997,7 +997,13 @@ No combate com grid, **segure Alt e clique no mapa** para sinalizar um ponto. O 
 
 `POST /api/combat/:combatId/spatial/ping` recebe `{ position: { xFeet, yFeet } }` de qualquer participante autenticado. O servidor valida o mapa e publica `combat:ping` para a mesa, sem persistência ou replay na reconexão.
 
-### O fluxo, passo a passo
+#### Conferir atingidos por áreas no grid
+
+Como Mestre, abra o radial no grid vazio e escolha uma área. Defina forma, dimensão, origem e direção; ajuste a **Elevação da origem (m)** e confirme. O servidor destaca atingidos em âmbar e pendências com borda tracejada, usando sobreposição parcial do espaço ocupado e altura corporal. Para remover a pendência de altura, abra os ajustes do token e preencha **Altura corporal (m)**; o resultado é atualizado quando o combate muda.
+
+Cone e linha miram na horizontal nesta etapa. A esfera usa a elevação como centro; cilindro e cubo começam nesse nível; a linha tem altura vertical explicitamente escolhida pelo Mestre. Essa representação por volumes e o critério de sobreposição são convenções do aplicativo, não um algoritmo geométrico prescrito pelo PHB. Paredes interpostas sem altura física cadastrada permanecem para decisão do Mestre. Os botões **Incluir/Excluir** só aparecem nos casos incertos e são revalidados no servidor; a confirmação vale para essa consulta e é descartada quando a área ou o combate muda. A consulta é privada, não grava alvos nem gasta ações e não aplica dano: cadastrar e executar habilidades de criatura com salvaguarda/dano é a próxima integração.
+
+## O fluxo, passo a passo
 
 1. **O mestre inicia o combate.** O botão **"⚔ COMBATE"** abre um modal com a lista de criaturas cadastradas; as marcadas entram na luta. O sistema adiciona automaticamente **todos os personagens de jogador**, cada criatura escolhida, e avisa a mesa inteira (`combat:started`). Só existe um combate por vez: iniciar outro devolve **409**.
 2. **Fase de iniciativa.** Cada jogador recebe um prompt na própria tela para rolar **1d20 + modificador de Destreza** (o modificador vem da ficha, calculado pelo servidor). Cada um rola quando quiser; a ordem só é montada quando **todos** tiverem rolado. O mestre rola pelas criaturas, uma a uma.

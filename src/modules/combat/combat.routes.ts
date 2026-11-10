@@ -1,3 +1,5 @@
+import { gridAreaQuerySchema } from './spatial/area-membership.js';
+import { queryCombatArea } from './spatial/area-query.service.js';
 import { verticalPatchSchema, elevationRequestSchema, elevationDecisionSchema, setVertical, requestElevation, elevationRequestsFor, decideElevation } from './spatial/elevation.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { opportunitySpellSchema } from './combat.schema.js';
@@ -585,4 +587,11 @@ combatRouter.post('/:combatId/reaction-opportunities/:opportunityId/spell', auth
   if (!parsed.success) {res.status(400).json({error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors}); return;}
   if (parsed.data.combatId !== String(req.params.combatId)) throw new HttpError('Combate divergente.', 400, 'VALIDATION_ERROR');
   res.json(await castOpportunitySpell(actorFrom(req), String(req.params.combatId), String(req.params.opportunityId), parsed.data));
+});
+
+/** Consulta de geometria de área: somente leitura e somente Mestre. */
+combatRouter.post('/:combatId/spatial/area-query', authenticate, requireRole('MASTER'), async(req,res)=>{
+ const parsed=gridAreaQuerySchema.safeParse(req.body??{});
+ if(!parsed.success){res.status(400).json({error:'VALIDATION_ERROR',issues:parsed.error.flatten()});return;}
+ res.json(await queryCombatArea(actorFrom(req),String(req.params.combatId),parsed.data));
 });

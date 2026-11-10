@@ -1,3 +1,5 @@
+import { queryGridArea, type AreaReading } from './areaQueryApi';
+import type { GridAreaQuery } from '../../../../src/modules/combat/spatial/area-membership';
 import {
   PREVIEW_SHAPES,
   previewDirectional,
@@ -9,7 +11,11 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 import type { SpatialPosition } from '../../types';
-import { formatSceneMeters } from '../../sceneUnits';
+import {
+  formatSceneMeters,
+  metersToFeet,
+  feetToMeters,
+} from '../../sceneUnits';
 import { feetToScenePixel, sceneToScreen, type GridCamera } from './gridCamera';
 
 const RADII_FEET = [5, 10, 15, 20, 30, 40, 60] as const;
@@ -20,8 +26,11 @@ type Marker = {
   widthFeet: number;
   heightFeet: number;
   angle: number;
+  elevationFeet: number;
 };
 interface Props {
+  assessmentContext?: { combatId: string; version: number } | null;
+  onTargets?: (targets: AreaReading[]) => void;
   request?: AreaPreviewRequest | null;
   camera: GridCamera;
   geometry: { cellSizeFeet: number; pixelsPerCell: number };
@@ -33,9 +42,11 @@ interface Props {
   pinging: boolean;
 }
 
-/** Modelo local de apresentação. Não consulta entidades, não calcula atingidos
- * e não chama APIs de movimento, conjuração ou economia. */
+/** O desenho é local; a consulta privada de atingidos vem do servidor.
+ * Não executa ataques, dano ou consumo de recursos. */
 export function GridAreaPreview({
+  assessmentContext,
+  onTargets,
   request,
   camera,
   geometry,
@@ -46,6 +57,14 @@ export function GridAreaPreview({
   panning,
   pinging,
 }: Props) {
+  const [decisionState, setDecisionState] = useState<{
+    key: string;
+    items: { targetKey: string; affected: boolean }[];
+  }>({ key: '', items: [] });
+  const [elevation, setElevation] = useState('0');
+  const [readings, setReadings] = useState<AreaReading[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<Marker | null>(null);
   const [editing, setEditing] = useState(false);
   const [center, setCenter] = useState<SpatialPosition | null>(null);
@@ -65,8 +84,9 @@ export function GridAreaPreview({
     setCenter(request.origin);
     setRadiusFeet(10);
     setLineWidth(5);
-    setHeight(20);
+    setHeight(request.shape === 'line' ? 5 : 20);
     setAngle(0);
+    setElevation('0');
     setPicked(!previewDirectional(request.shape));
     setAiming(previewDirectional(request.shape));
     setEditing(true);
@@ -111,6 +131,7 @@ export function GridAreaPreview({
     setShape(saved?.shape ?? 'sphere');
     setLineWidth(saved?.widthFeet ?? 5);
     setHeight(saved?.heightFeet ?? 20);
+    setElevation(String(feetToMeters(saved?.elevationFeet ?? 0)));
     setAngle(saved?.angle ?? 0);
     setAiming(false);
     setPicked(Boolean(saved));
@@ -138,6 +159,7 @@ export function GridAreaPreview({
             widthFeet: lineWidth,
             heightFeet: height,
             angle,
+            elevationFeet: metersToFeet(Number(elevation.replace(',', '.'))),
           }
         : null
       : saved;
@@ -145,6 +167,86 @@ export function GridAreaPreview({
     ? sceneToScreen(camera, feetToScenePixel(marker.center, geometry))
     : null;
 
+  const decisionKey = `${assessmentContext?.combatId}:${assessmentContext?.version}:${JSON.stringify(saved)}`;
+  const decisions =
+    decisionState.key === decisionKey ? decisionState.items : [];
+  useEffect(() => {
+    let alive = true;
+    setReadings([]);
+    setError(null);
+    onTargets?.([]);
+    if (!saved || editing || disabled || !assessmentContext) {
+      setLoading(false);
+      return;
+    }
+    const dimension = saved.radiusFeet;
+    const volume: GridAreaQuery['shape'] =
+      saved.shape === 'sphere'
+        ? { kind: 'sphere', radiusFeet: dimension }
+        : saved.shape === 'cylinder'
+          ? {
+              kind: 'cylinder',
+              radiusFeet: dimension,
+              heightFeet: saved.heightFeet,
+            }
+          : saved.shape === 'cube'
+            ? { kind: 'cube', sizeFeet: dimension }
+            : saved.shape === 'cone'
+              ? { kind: 'cone', lengthFeet: dimension }
+              : {
+                  kind: 'line',
+                  lengthFeet: dimension,
+                  widthFeet: saved.widthFeet,
+                };
+    setLoading(true);
+    queryGridArea(assessmentContext.combatId, {
+      decisions,
+      shape: volume,
+      origin: {
+        xFeet: saved.center.xFeet,
+        yFeet: saved.center.yFeet,
+        elevationFeet: saved.elevationFeet,
+      },
+      angle: saved.angle,
+      ...(saved.shape === 'line' ? { lineHeightFeet: saved.heightFeet } : {}),
+    })
+      .then((result) => {
+        if (!alive) return;
+        if (result.combatVersion !== assessmentContext.version) {
+          setError('O combate mudou. Ajuste a área para conferir novamente.');
+          return;
+        }
+        setReadings(result.candidates);
+        onTargets?.(result.candidates);
+      })
+      .catch((cause) => {
+        if (alive)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Não foi possível conferir a área.',
+          );
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [
+    saved,
+    editing,
+    disabled,
+    assessmentContext?.combatId,
+    assessmentContext?.version,
+    onTargets,
+    decisionState,
+  ]);
+  useEffect(() => () => onTargets?.([]), [onTargets]);
+  const elevationValid =
+    Boolean(elevation.trim()) &&
+    Number.isFinite(Number(elevation.replace(',', '.'))) &&
+    Math.abs(Number(elevation.replace(',', '.'))) <= 3000;
   // O acesso inicial fica no radial; controles só existem com uma prévia.
   if (!saved && (!editing || disabled)) return null;
 
@@ -254,7 +356,7 @@ export function GridAreaPreview({
         />
       ) : null}
       <div
-        className="grid-area-controls"
+        className={`grid-area-controls${!editing && assessmentContext && saved ? ' has-assessment' : ''}`}
         role="group"
         aria-label="Prévia de áreas"
         onPointerDown={(event) => event.stopPropagation()}
@@ -302,6 +404,7 @@ export function GridAreaPreview({
                 onChange={(event) => {
                   const next = event.target.value as PreviewShape;
                   setShape(next);
+                  if (next === 'line') setHeight(lineWidth);
                   setAiming(previewDirectional(next) && !!center);
                   setPicked(!!center && !previewDirectional(next));
                 }}
@@ -353,10 +456,41 @@ export function GridAreaPreview({
                 </select>
               </label>
             ) : null}
+            {assessmentContext ? (
+              <>
+                <label>
+                  Elevação da origem (m)
+                  <input
+                    aria-label="Elevação da origem em metros"
+                    inputMode="decimal"
+                    value={elevation}
+                    onChange={(event) => setElevation(event.target.value)}
+                  />
+                </label>
+                {shape === 'line' ? (
+                  <label>
+                    Altura da linha
+                    <select
+                      aria-label="Altura vertical da linha"
+                      value={height}
+                      onChange={(event) =>
+                        setHeight(Number(event.target.value))
+                      }
+                    >
+                      {RADII_FEET.map((feet) => (
+                        <option key={feet} value={feet}>
+                          {formatSceneMeters(feet)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </>
+            ) : null}
             <button
               className="btn btn-small"
               type="button"
-              disabled={!center || !picked}
+              disabled={!center || !picked || !elevationValid}
               onClick={() => {
                 if (!center || !picked || disabled) return;
                 setSaved({
@@ -366,6 +500,9 @@ export function GridAreaPreview({
                   widthFeet: lineWidth,
                   heightFeet: height,
                   angle,
+                  elevationFeet: metersToFeet(
+                    Number(elevation.replace(',', '.')),
+                  ),
                 });
                 cancel();
               }}
@@ -387,6 +524,100 @@ export function GridAreaPreview({
             </span>
           </>
         )}
+        {!editing && assessmentContext ? (
+          <div className="grid-area-assessment" aria-live="polite">
+            {loading ? <p>Conferindo atingidos…</p> : null}
+            {error ? <p role="alert">{error}</p> : null}
+            {!loading && !error && saved ? (
+              <>
+                <strong>
+                  {readings.filter((row) => row.affected === 'pass').length}{' '}
+                  atingido(s) ·{' '}
+                  {readings.filter((row) => row.affected === 'unknown').length}{' '}
+                  a confirmar
+                </strong>
+                <ul>
+                  {readings
+                    .filter((row) => row.affected !== 'fail')
+                    .map((row) => (
+                      <li
+                        key={row.combatantId}
+                        className={
+                          row.affected === 'pass' ? 'is-hit' : 'is-uncertain'
+                        }
+                      >
+                        {row.name} ·{' '}
+                        {row.affected === 'pass'
+                          ? row.decisionSource === 'master-confirmed'
+                            ? 'Atingido · decisão do Mestre'
+                            : 'Atingido'
+                          : row.reasons.includes('body-height-missing')
+                            ? 'Cadastre a altura corporal no token'
+                            : row.reasons.includes('wall-height-unknown')
+                              ? 'Mestre: conferir obstáculo e altura'
+                              : 'Mestre: conferir posição e altura'}
+                        {row.affected === 'unknown' ? (
+                          <span className="grid-area-decisions">
+                            <button
+                              className="btn btn-small"
+                              type="button"
+                              onClick={() =>
+                                setDecisionState({
+                                  key: decisionKey,
+                                  items: [
+                                    ...decisions,
+                                    {
+                                      targetKey: row.targetKey,
+                                      affected: true,
+                                    },
+                                  ],
+                                })
+                              }
+                            >
+                              Incluir
+                            </button>
+                            <button
+                              className="btn btn-small"
+                              type="button"
+                              onClick={() =>
+                                setDecisionState({
+                                  key: decisionKey,
+                                  items: [
+                                    ...decisions,
+                                    {
+                                      targetKey: row.targetKey,
+                                      affected: false,
+                                    },
+                                  ],
+                                })
+                              }
+                            >
+                              Excluir
+                            </button>
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                </ul>
+                {decisions.length ? (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() =>
+                      setDecisionState({ key: decisionKey, items: [] })
+                    }
+                  >
+                    Rever confirmações
+                  </button>
+                ) : null}
+                <small>
+                  Consulta de alvos, sem dano ou gasto de ações. Cone e linha
+                  miram na horizontal. A altura da linha é definida pelo Mestre.
+                </small>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </>
   );

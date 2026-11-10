@@ -1,3 +1,4 @@
+import { smokeAreaQuery } from './smoke-area-query.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
@@ -220,6 +221,7 @@ export async function smokeSceneTerrain(
           .turnEconomy as { movementUsed: number }
       ).movementUsed === 3,
     );
+    await smokeAreaQuery(http,combat.id,mover.id,playerToken);
     check(
       'Cena em combate não aceita borracha',
       (

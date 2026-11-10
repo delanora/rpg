@@ -21,6 +21,7 @@ export type GridUnit = Pick<
 };
 
 export interface GridTokenProps {
+  areaStatus?: 'pass'|'fail'|'unknown';
   combatant: GridUnit;
   cellSizeFeet: number;
   pixelsPerCell: number;
@@ -82,6 +83,7 @@ export function GridToken({
   combatant,
   cellSizeFeet,
   pixelsPerCell,
+  areaStatus,
   currentTurn = false,
   isMaster = false,
   showNumber = false,
@@ -114,6 +116,8 @@ export function GridToken({
   const relation = combatant.relation ?? 'unknown';
   const relationLabel = {hostile:'hostil',allied:'aliado',neutral:'neutro',unknown:'relação não definida'}[relation];
   const classes = ['grid-token'];
+  if(areaStatus==='pass')classes.push('is-area-hit');
+  if(areaStatus==='unknown')classes.push('is-area-uncertain');
   if (showNumber && combatant.tokenNumber) classes.push('has-number');
   if (combatant.tokenDimmed) classes.push('is-inactive');
   if (currentTurn) classes.push('is-current');
@@ -155,7 +159,7 @@ export function GridToken({
         movable ? ', pode ser movido' : ''
       }${rulerActive ? ', pode ser medido' : ''}${
         targetable ? ', pode ser escolhido como alvo' : ''
-      }${targetPicked ? ', alvo escolhido' : ''}${
+      }${areaStatus==='pass'?', atingido pela área':areaStatus==='unknown'?', área a confirmar':''}${targetPicked ? ', alvo escolhido' : ''}${
         rollMode ? `, modo de rolagem ${ROLL_MODE_LABELS[rollMode].toLowerCase()}` : ''
       }`}
       aria-pressed={selected || measureRole !== null || targetPicked}
