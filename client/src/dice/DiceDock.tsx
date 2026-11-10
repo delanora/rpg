@@ -201,6 +201,7 @@ export function DiceDock({ roller }: DiceDockProps) {
                       {settled && result ? (
                         result.dice.map((die, index) => (
                           <Die3D
+                            appearance={deathSave ? 'death-save' : undefined}
                             key={`r-${index}`}
                             sides={die.sides}
                             value={die.value}
@@ -214,6 +215,7 @@ export function DiceDock({ roller }: DiceDockProps) {
                         <>
                           {pool.map((die, index) => (
                             <Die3D
+                              appearance={deathSave ? 'death-save' : undefined}
                               key={`p-${index}`}
                               sides={die.sides}
                               value={null}
@@ -229,6 +231,7 @@ export function DiceDock({ roller }: DiceDockProps) {
                           {rolling
                             ? Array.from({ length: extraD20 }, (_, index) => (
                                 <Die3D
+                                  appearance={deathSave ? 'death-save' : undefined}
                                   key={`x-${index}`}
                                   sides={20}
                                   value={null}

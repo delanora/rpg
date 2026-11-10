@@ -306,3 +306,23 @@
   background: rgba(14, 10, 12, 0.6);
   color: var(--ds-gold);
 }
+/* --- O DADO: faces texturizadas com as artes da mesa ----------------------
+   No Teste contra a Morte as faces do icosaedro deixam o gradiente e o número
+   e recebem o PNG da arte (`client/public/death-save/faces/face_XX.png`),
+   colado na face por `matrix` (ver `deathFaces.ts`) e recortado pelo mesmo
+   `clip-path` da geometria. A cor de fundo aqui é a obsidiana que fica por
+   baixo da textura: se sobrar uma fresta de meio pixel na aresta, aparece pedra
+   escura em vez de fundo do ring. */
+.ddie.is-death-save .ddie-face {
+  box-shadow: none;
+}
+
+.ddie.is-death-save .ddie-texture {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}

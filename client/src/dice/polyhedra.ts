@@ -113,6 +113,15 @@ function rotationBetween(from: V3, to: V3): M4 {
 
 const toCss = (m: M4): string => `matrix3d(${m.map((v) => Number(v.toFixed(5))).join(',')})`;
 
+/** Aplica a transposta de uma matriz de rotação a um vetor (a rotação inversa). */
+function applyTranspose(m: M4, v: V3): V3 {
+  return [
+    m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+    m[4] * v[0] + m[5] * v[1] + m[6] * v[2],
+    m[8] * v[0] + m[9] * v[1] + m[10] * v[2],
+  ];
+}
+
 /* ---------------------------------------------------------------------------
  * Poliedros (vértices + faces)
  * ------------------------------------------------------------------------- */
@@ -362,6 +371,19 @@ export interface DieFace {
   valueSize: number;
   /** Normal para fora, no espaço do modelo. */
   normal: V3;
+  /**
+   * Vértices do polígono da face em px do quadrado da face, sem a folga de
+   * `FACE_OUTSET` — é onde a textura (a arte da face) tem de encostar.
+   */
+  polygon: Array<[number, number]>;
+  /** Centroide do polígono, em px do quadrado da face. */
+  center: [number, number];
+  /**
+   * Ângulo (no quadrado da face) que precisa ficar "para cima" na tela quando a
+   * `settleTransform` assenta esta face de frente para a câmera. Usado para a
+   * arte não aparecer de cabeça para baixo.
+   */
+  upAngle: number;
 }
 
 /**
@@ -454,16 +476,39 @@ function buildFace(vertices: V3[], indices: number[], value: number | null, key:
     ),
   );
 
+  // Geometria para colar a textura da face (dado de morte): os vértices do
+  // polígono sem a folga de `FACE_OUTSET`, o centroide e o ângulo que precisa
+  // ficar para cima na tela quando o dado assenta nesta face.
+  const size = side * MODEL_SCALE * FACE_OUTSET;
+  const centerPx: [number, number] = [(valueX / 100) * size, (valueY / 100) * size];
+  const polygon = flat.map(([x, y]) => {
+    const px = (percentX(x) / 100) * size;
+    const py = (percentY(y) / 100) * size;
+    return [
+      centerPx[0] + (px - centerPx[0]) / FACE_OUTSET,
+      centerPx[1] + (py - centerPx[1]) / FACE_OUTSET,
+    ] as [number, number];
+  });
+  // A tela tem o "para cima" em (0, -1, 0) no CSS; trazendo esse vetor de volta
+  // pelo inverso do pouso e projetando na base (u, w) da face, sai a direção que
+  // a arte precisa ter dentro do quadrado da face.
+  const pouso = rotationBetween(normal, [0, 0, 1]);
+  const origemDoCima = applyTranspose(pouso, [0, -1, 0]);
+  const upAngle = Math.atan2(dot(origemDoCima, u), -dot(origemDoCima, w));
+
   return {
     key,
     value,
     clipPath,
     transform,
-    size: side * MODEL_SCALE * FACE_OUTSET,
+    size,
     valueX,
     valueY,
     valueSize,
     normal,
+    polygon,
+    center: centerPx,
+    upAngle,
   };
 }
 

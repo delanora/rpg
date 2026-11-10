@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { texturaDaFace } from './deathFaces';
 import { dieFaces, paintsValues, settleTransform, type V3 } from './polyhedra';
 
 /** Direção da luz (no espaço do modelo) usada para o facetado das faces. */
@@ -6,6 +7,9 @@ const LIGHT: V3 = [-0.45, -0.78, 0.44];
 
 /** Inclinação parada do dado antes de rolar (só para dar volume à peça). */
 const IDLE_TILT = 'rotateX(-18deg) rotateY(26deg) rotateZ(4deg)';
+
+/** Base escura que fica por baixo da textura (cobre frestas nas arestas). */
+const OBSIDIANA = '#0f0b0d';
 
 interface Die3DProps {
   sides: number;
@@ -18,6 +22,12 @@ interface Die3DProps {
   locked?: boolean;
   onClick?: () => void;
   title?: string;
+  /**
+   * `death-save` troca a pintura das faces pelas artes do Teste contra a Morte
+   * (obsidiana, símbolo esculpido e borda de latão). A geometria, o giro e o
+   * pouso são os mesmos de sempre.
+   */
+  appearance?: 'death-save';
 }
 
 /**
@@ -35,14 +45,17 @@ export function Die3D({
   locked = false,
   onClick,
   title,
+  appearance,
 }: Die3DProps) {
   const faces = useMemo(() => dieFaces(sides), [sides]);
   const paints = paintsValues(sides);
   const settle = reveal && value !== null ? settleTransform(sides, value) : null;
+  const temaMorte = appearance === 'death-save';
 
   const className = [
     'ddie',
     `ddie-s${sides}`,
+    temaMorte ? 'is-death-save' : '',
     tumbling ? 'is-tumbling' : '',
     reveal ? 'is-revealed' : '',
     dropped ? 'is-dropped' : '',
@@ -58,6 +71,7 @@ export function Die3D({
         <span className="ddie-spin">
           <span className="ddie-model">
             {faces.map((face) => {
+              const textura = temaMorte ? texturaDaFace(face) : null;
               const shade = Math.max(0, face.normal[0] * LIGHT[0] + face.normal[1] * LIGHT[1] + face.normal[2] * LIGHT[2]);
               // Dado descartado (vantagem/desvantagem) fica mais fosco e sem cor.
               const saturation = dropped ? 8 : 46;
@@ -72,10 +86,27 @@ export function Die3D({
                     height: face.size,
                     clipPath: face.clipPath,
                     transform: face.transform,
-                    background: `linear-gradient(150deg, hsl(38 ${saturation}% ${Math.min(92, base + 8)}%), hsl(33 ${saturation - 4}% ${Math.max(30, base - 12)}%))`,
+                    background: textura
+                      ? OBSIDIANA
+                      : `linear-gradient(150deg, hsl(38 ${saturation}% ${Math.min(92, base + 8)}%), hsl(33 ${saturation - 4}% ${Math.max(30, base - 12)}%))`,
                   }}
                 >
-                  {reveal && face.value !== null ? (
+                  {textura ? (
+                    // A arte é a própria superfície da face: entra no plano dela,
+                    // recortada pelo `clip-path`, e gira junto com o dado.
+                    <img
+                      className="ddie-texture"
+                      src={textura.src}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        width: textura.largura,
+                        height: textura.altura,
+                        transform: textura.transform,
+                      }}
+                    />
+                  ) : null}
+                  {!textura && reveal && face.value !== null ? (
                     // O número fica no centroide da face (não no centro da
                     // caixa) e cresce junto com a face. É um `font-size` no
                     // espaço do modelo, então o `.ddie-model` o escala na
@@ -126,4 +157,3 @@ export function Die3D({
     </span>
   );
 }
-
