@@ -27,6 +27,9 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
     board.advantage || board.disadvantage
       ? board.pool.filter((die) => die.sides === 20).length
       : 0;
+  // Rolagem de VIDA OU MORTE: quem assiste vê o MESMO quadro sombrio do autor
+  // (a pele é a de `death-save.css`, aplicada pelas classes abaixo).
+  const deathSave = board.kind === 'death-save';
 
   // Esc fecha e o fundo não rola enquanto o tabuleiro está aberto.
   useEffect(() => {
@@ -45,8 +48,16 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
   }, [onClose]);
 
   return createPortal(
-    <div className="dice-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="dice-stage" onClick={(event) => event.stopPropagation()}>
+    <div
+      className={`dice-overlay${deathSave ? ' is-death-save' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className={`dice-stage${deathSave ? ' is-death-save' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+      >
         {/* Cabeçalho: quem está rolando (só leitura para quem assiste). */}
         <header className="dice-watch-head">
           <Portrait
