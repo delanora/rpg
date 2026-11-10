@@ -306,3 +306,116 @@
   background: rgba(14, 10, 12, 0.6);
   color: var(--ds-gold);
 }
+/* --- O DADO: as faces desenhadas em SVG -----------------------------------
+   O Teste contra a Morte não usa o d20 numérico: a placa triangular mostra o
+   símbolo da face (1 caveira rachada, 2–9 caveira com ossos cruzados, 10–19
+   coração, 20 mãos rezando), desenhado no `DeathDie.tsx`, sem imagem alguma.
+   A brasa vermelha marca a falha crítica; o dourado, o sucesso crítico. */
+.ddeath {
+  position: relative;
+  display: block;
+  width: min(15rem, 86%);
+  aspect-ratio: 1;
+  filter:
+    drop-shadow(0 18px 26px rgba(0, 0, 0, 0.8))
+    drop-shadow(0 0 16px rgba(146, 34, 26, 0.3));
+  animation: ddeath-land 0.5s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.ddeath-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Enquanto a rolagem corre, a placa tomba no ar (a troca de face é feita pelo
+   componente, que é quem conhece os desenhos). */
+.ddeath.is-tumbling {
+  animation: ddeath-tumble 0.9s linear infinite;
+}
+
+/* Falha crítica: brasa vermelha. Sucesso crítico: dourado. */
+.ddeath.is-fumble .ddeath-svg {
+  filter: drop-shadow(0 0 14px rgba(214, 62, 38, 0.75));
+}
+
+.ddeath.is-crit .ddeath-svg {
+  filter: drop-shadow(0 0 16px rgba(232, 201, 141, 0.8));
+}
+
+/* Efeitinhos (só nas faces 1 e 20): a brasa que sobe e a faísca que pisca. */
+.ddeath-ember,
+.ddeath-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ddeath-ember {
+  animation: ddeath-ember 2.4s ease-out infinite;
+}
+
+.ddeath-spark {
+  animation: ddeath-twinkle 2.2s ease-in-out infinite;
+}
+
+@keyframes ddeath-tumble {
+  0% {
+    transform: perspective(700px) rotateY(0deg) rotateZ(0deg) scale(0.96);
+  }
+  50% {
+    transform: perspective(700px) rotateY(200deg) rotateZ(-8deg) scale(1.04);
+  }
+  100% {
+    transform: perspective(700px) rotateY(360deg) rotateZ(0deg) scale(0.96);
+  }
+}
+
+@keyframes ddeath-land {
+  0% {
+    transform: scale(1.12) rotate(-3deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.99) rotate(1deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes ddeath-ember {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(-26px) scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes ddeath-twinkle {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ddeath,
+  .ddeath-ember,
+  .ddeath-spark {
+    animation: none;
+  }
+}
