@@ -1,3 +1,4 @@
+import { elevationCellsSchema } from '../combat/spatial/elevation.js';
 import { z } from 'zod';
 import { SPATIAL_MODES, spatialPositionSchema } from '../combat/spatial/spatial.types.js';
 
@@ -18,6 +19,7 @@ const sceneNameSchema = z.string().trim().min(1, 'A cena precisa de um nome.').m
  */
 export const sceneSpatialConfigSchema = z
   .object({
+    elevationCells: elevationCellsSchema.optional(),
     mode: z.enum(SPATIAL_MODES),
     widthFeet: z.number().finite().min(5).max(100_000).optional(),
     heightFeet: z.number().finite().min(5).max(100_000).optional(),

@@ -75,3 +75,8 @@ export function gridSquaresLabel(feet: number): string {
   const noun = squares === 1 ? 'quadrado' : 'quadrados';
   return `${SQUARES_FORMAT.format(squares)} ${noun} de ${formatSceneMeters(SCENE_CELL_FEET)}`;
 }
+
+/** Altura admite sinal e frações livres; não usa o snap horizontal da cena. */
+export function metersToElevationFeet(meters: number): number {
+  return Math.round(meters / SCENE_METERS_PER_FOOT * 1e6) / 1e6;
+}

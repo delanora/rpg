@@ -305,3 +305,15 @@
 /* O grau é configurado junto dos bloqueios independentes da parede. */
 .scene-wall-cover { display: grid; gap: 0.35rem; min-width: 0; font-size: var(--text-micro); color: var(--ink-soft); }
 .scene-wall-cover select { width: 100%; min-width: 0; }
+
+.scene-elevation-map { position: relative; margin-top: .75rem; }
+.scene-elevation-overlay { cursor: crosshair; }
+.scene-elevation-cell rect { fill: #c8a44b30; stroke: #c8a44b90; stroke-width: .12; }
+.scene-elevation-cell--low rect { fill: #538aad38; stroke: #83b1d0; }
+.scene-elevation-cell text { fill: #fff1c7; font: 1px sans-serif; paint-order: stroke; stroke: #15120c; stroke-width: .25px; pointer-events: none; }
+.scene-elevation-selected { fill: #e5c76d66; stroke: var(--gold); stroke-width: .18; }
+.scene-elevation-popover { position: sticky; bottom: .75rem; margin: -1rem auto .75rem; width: min(100%, 22rem); padding: .9rem; border: 1px solid var(--gold); border-radius: .65rem; background: var(--surface); box-shadow: 0 8px 24px #0008; z-index: 3; display: grid; gap: .65rem; }
+.scene-elevation-popover label { display: grid; gap: .35rem; }
+.scene-elevation-popover input { width: 100%; }
+.scene-elevation-popover input { box-sizing: border-box; padding: .55rem .65rem; border: 1px solid var(--line); border-radius: .35rem; background: var(--surface-2); color: var(--ink); font: inherit; }
+.scene-elevation-popover input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }

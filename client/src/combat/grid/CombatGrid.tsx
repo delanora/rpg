@@ -1,3 +1,5 @@
+import { GridElevations } from './GridElevations';
+import { requestElevation } from './elevationApi';
 import { GridRadialMenu } from './GridRadialMenu';
 import type { AreaPreviewRequest } from './areaPreviewGeometry';
 import { GridAreaPreview } from './GridAreaPreview';
@@ -1394,6 +1396,12 @@ export function CombatGrid({
         clearDraft();
         return;
       }
+      if (fresh.elevationDecisionRequired) {
+        operationRef.current ??= createOperationId();
+        onCombatChange(await requestElevation(combat, combatantId, path, operationRef.current)); clearDraft();
+        setPendingNotice('Travessia de desnível enviada ao Mestre. O token aguarda a decisão.');
+        return;
+      }
       setPreview(fresh);
       if (!await acceptReactionRisk(fresh)) { clearDraft(); return; }
       operationRef.current ??= createOperationId();
@@ -2188,6 +2196,8 @@ export function CombatGrid({
                 cellSizeFeet={cellSizeFeet}
                 tone={gridTone}
               />
+
+              <GridElevations cells={scene.elevationCells} pixelsPerCell={DEFAULT_PIXELS_PER_CELL} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet} />
 
               {placed.map((combatant) => (
                 <GridToken

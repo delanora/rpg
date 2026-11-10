@@ -1,3 +1,4 @@
+import { surfaceElevation } from './elevation.js';
 import { effectiveSceneConfigOf, type SpatialPosition2D } from './spatial.types.js';
 import { evaluateWallPath, evaluateWallSight } from './targeting-walls.js';
 import { obstacleDtoOf } from './spatial-obstacle.js';
@@ -81,11 +82,13 @@ export function opportunityAttackProfilesOf(
 
 function spatialBodyOf(
   combatant: CombatantSourced,
-): { position: { xFeet: number; yFeet: number }; size: SpatialSize } | null {
+): { position: { xFeet: number; yFeet: number }; size: SpatialSize; elevationFeet?: number | null; bodyHeightFeet?: number | null } | null {
   const position = parseStoredPosition(combatant.spatialPosition);
   if (!position) return null;
   return {
     position,
+    elevationFeet: combatant.elevationFeet,
+    bodyHeightFeet: combatant.bodyHeightFeet,
     size: effectiveSizeOf((combatant.baseSize ?? 'medium') as SpatialSize),
   };
 }
@@ -93,10 +96,15 @@ function spatialBodyOf(
 /** Visão no ponto real do boundary, antes do passo que sairia do alcance. */
 export function reactionVisibilityAt(combat: CombatSourced, reactor: CombatantSourced,
   mover: CombatantSourced, position: SpatialPosition2D, size: SpatialSize): OpportunityVisibilityStatus {
+  const scene = effectiveSceneConfigOf(combat);
+  const reactorPosition = parseStoredPosition(reactor.spatialPosition);
+  const reactorLevel = reactor.elevationFeet ?? (reactorPosition ? surfaceElevation(scene, reactorPosition, reactor.baseSize ?? 'medium') : null);
+  const moverLevel = mover.elevationFeet ?? surfaceElevation(scene, position, size);
+  const verticalUnknown = reactorLevel === null || moverLevel === null || Math.abs(reactorLevel - moverLevel) > 1e-6;
   return opportunityVisibilityOf({
     canSeeMover: canSee(combatantMechanicalState(reactor), combatantMechanicalState(mover)),
     occludersExist: false,
-    geometry: evaluateWallSight(effectiveSceneConfigOf(combat), spatialBodyOf(reactor), {position, size},
+    geometry: verticalUnknown ? 'unknown' : evaluateWallSight(effectiveSceneConfigOf(combat), spatialBodyOf(reactor), {position, size},
       combat.scene ? combat.scene.obstacles?.map(obstacleDtoOf) ?? null : []).result,
   });
 }

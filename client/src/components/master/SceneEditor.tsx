@@ -1,3 +1,4 @@
+import { SceneElevationEditor } from './SceneElevationEditor';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, fileToImagePayload, uploadImage } from '../../api';
 import {
@@ -384,6 +385,19 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
       <Section title="Mapa e paredes" icon="scroll" subtitle="Prepare as barreiras antes de iniciar o combate">
         <SceneWallsEditor scene={scene} disabled={!editable} onMutate={mutateWall}
           onReload={async () => { const fresh = await onReload(); setLocked(false); setError(null); return fresh; }}
+          renderCanvas={(overlay, zoom) => <ScenePreview scene={scene} imageFailed={imageFailed}
+            onImageError={() => setImageFailed(true)} overlay={overlay} zoom={zoom} />} />
+      </Section>
+
+      <Section title="Elevações do terreno" icon="scroll" subtitle="Pinte plataformas e fossos em metros">
+        <SceneElevationEditor key={scene.id} scene={scene} disabled={!editable}
+          onSave={async (patch, version, operationId) => {
+            if (locked || writing.current) throw new ApiError('Aguarde a operação atual.', 409, 'CONFLICT');
+            writing.current = true; setBusy(true); setError(null);
+            try { return await onUpdate(patch, version, operationId); }
+            catch (cause) { await handleFailure(cause); throw cause; }
+            finally { writing.current = false; setBusy(false); }
+          }}
           renderCanvas={(overlay, zoom) => <ScenePreview scene={scene} imageFailed={imageFailed}
             onImageError={() => setImageFailed(true)} overlay={overlay} zoom={zoom} />} />
       </Section>

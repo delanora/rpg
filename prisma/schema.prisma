@@ -969,6 +969,7 @@ enum CombatantKind {
 /// aplicação em `startCombat` continua existindo (caminho rápido) e o erro
 /// P2002 do INSERT é traduzido para o mesmo 409.
 model Combat {
+  elevationRequests ElevationRequest[]
   id           String       @id @default(cuid())
   version      Int          @default(0)
   /// Eventos estruturais da economia (ataques mantêm o canal de resultado existente).
@@ -1023,6 +1024,10 @@ model Combat {
 }
 
 model Combatant {
+  elevationRequests ElevationRequest[]
+  /// Altura da base e altura corporal em pés; null mantém arbitragem explícita.
+  elevationFeet Float?
+  bodyHeightFeet Float?
   /// Reforço que ainda não recebeu seu primeiro turno.
   firstTurnPending Boolean @default(false)
   requestedDuels CombatDuel[] @relation("DuelRequester")
@@ -1797,4 +1802,21 @@ model CombatDuel {
   createdAt DateTime @default(now())
   @@index([combatId, status])
   @@map("combat_duels")
+}
+
+/// Solicitação privada de travessia; o Mestre autoriza um trajeto exato neste turno.
+model ElevationRequest {
+  combat Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  combatant Combatant @relation(fields: [combatantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  combatId String
+  combatantId String
+  requesterId String
+  turnSequence Int
+  origin Json
+  path Json
+  status String @default("pending")
+  createdAt DateTime @default(now())
+  @@index([combatId, status])
+  @@map("elevation_requests")
 }

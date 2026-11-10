@@ -1,3 +1,4 @@
+import { feetToMeters } from '../../sceneUnits';
 import { Icon } from '../../components/Icon';
 import type { CSSProperties, PointerEvent } from 'react';
 import type { CombatantDto } from '../../types';
@@ -231,7 +232,7 @@ export function GridToken({
         )}
       </span>
       {showNumber && combatant.tokenNumber ? <span className="grid-token-number" aria-label={`Unidade ${combatant.tokenNumber}`}>{combatant.tokenNumber}</span> : null}
-      <span className="grid-token-label">{combatant.name}</span>
+      <span className="grid-token-label">{combatant.name}{combatant.spatial.elevationFeet != null && combatant.spatial.elevationFeet !== 0 ? <small className="grid-token-elevation">{feetToMeters(combatant.spatial.elevationFeet).toLocaleString('pt-BR')} m</small> : null}</span>
     </button>
     {isMaster && (combatant.kind === 'CREATURE' || combatant.kind === 'NPC') ? <button
       type="button" className="grid-token-visibility"

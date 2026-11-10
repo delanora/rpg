@@ -2151,6 +2151,8 @@ export interface OccupiedSpace {
  * `spatial` é `null` quando o combatente é privado do Mestre.
  */
 export interface CombatantSpatial {
+  elevationFeet?: number | null;
+  bodyHeightFeet?: number | null;
   tokenImageRef: string | null;
   baseSize: SpatialSize;
   effectiveSize: SpatialSize;
@@ -2292,6 +2294,7 @@ export interface MovementReactionReading {
 }
 
 export interface MovementPreviewResponse {
+  elevationDecisionRequired?: boolean;
   movement: MovementPathReading;
   reaction: MovementReactionReading;
 }
@@ -2327,7 +2330,10 @@ export interface MovementCommitResponse {
 }
 
 /** Configuração espacial da cena (combates legados = `assisted`). */
+export interface ElevationCell { xFeet: number; yFeet: number; elevationFeet: number }
+
 export interface SpatialScene {
+  elevationCells?: ElevationCell[];
   mode: 'assisted' | 'grid-2d';
   widthFeet: number;
   heightFeet: number;
@@ -2373,6 +2379,7 @@ export interface Scene {
 
 /** Configuração espacial aceita no PATCH — dimensões em PÉS, sempre. */
 export interface SceneSpatialPatch {
+  elevationCells?: ElevationCell[];
   mode: SpatialScene['mode'];
   widthFeet?: number;
   heightFeet?: number;

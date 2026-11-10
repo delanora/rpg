@@ -1,3 +1,4 @@
+import { elevationCellsWithinScene, type ElevationCell } from '../combat/spatial/elevation.js';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { prisma } from '../../config/prisma.js';
@@ -49,7 +50,7 @@ export interface SceneOperationInput {
   operationId: string;
   /** Campos do alvo da operação (entram no fingerprint de propósito). */
   name?: string;
-  spatialConfig?: { mode: SpatialMode; widthFeet?: number; heightFeet?: number };
+  spatialConfig?: { mode: SpatialMode; widthFeet?: number; heightFeet?: number; elevationCells?: ElevationCell[] };
   backgroundImageUrl?: string | null;
   obstacleId?: string;
   obstacle?: Partial<SpatialObstacleShape>;
@@ -119,10 +120,11 @@ export async function assertSceneNotInUse(
  */
 function mergedSpatialConfig(
   current: SpatialSceneConfig | null,
-  patch: { mode: SpatialMode; widthFeet?: number; heightFeet?: number },
+  patch: { mode: SpatialMode; widthFeet?: number; heightFeet?: number; elevationCells?: ElevationCell[] },
 ): SpatialSceneConfig {
   const base = current ?? defaultSpatialScene();
   return {
+    ...(patch.elevationCells !== undefined || base.elevationCells ? { elevationCells: patch.elevationCells ?? base.elevationCells } : {}),
     mode: patch.mode,
     widthFeet: patch.widthFeet ?? base.widthFeet,
     heightFeet: patch.heightFeet ?? base.heightFeet,
@@ -161,6 +163,7 @@ export async function createScene(
   if (locality === 0) throw new HttpError('Localidade não encontrada.', 404);
 
   const config = input.spatialConfig ? mergedSpatialConfig(null, input.spatialConfig) : null;
+  if (config && !elevationCellsWithinScene(config.elevationCells ?? [], config)) throw new HttpError('A elevação precisa ficar dentro da cena.', 400, 'VALIDATION_ERROR');
   const scene = await prisma.scene.create({
     data: {
       localityId,
@@ -200,6 +203,7 @@ export async function updateScene(
       }
       if (input.spatialConfig !== undefined) {
         const next = mergedSpatialConfig(spatialSceneOf(scene.spatialConfig), input.spatialConfig);
+        if (!elevationCellsWithinScene(next.elevationCells ?? [], next)) throw new HttpError('Uma elevação ficaria fora da cena.', 409, 'SCENE_RESIZE_CONFLICT');
         // Reduzir a cena nunca move nem apaga parede: a alteração inteira é
         // recusada se alguma parede sair dos novos limites.
         const orphan = (scene.obstacles ?? []).find(

@@ -1,3 +1,4 @@
+import { verticalPatchSchema, elevationRequestSchema, elevationDecisionSchema, setVertical, requestElevation, elevationRequestsFor, decideElevation } from './spatial/elevation.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { opportunitySpellSchema } from './combat.schema.js';
 import { castOpportunitySpell } from './spatial/war-caster.service.js';
@@ -245,6 +246,26 @@ combatRouter.post('/:combatId/spatial/movement-preview', authenticate, async (re
  * jogador é o Reaction Gate no serviço (Opportunity Attacks ainda não existem)
  * — liberar movimento antes dele permitiria sair do alcance de inimigos.
  */
+combatRouter.patch('/:combatId/combatants/:combatantId/spatial-height', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = verticalPatchSchema.safeParse(req.body);
+  if (!parsed.success) {res.status(400).json({error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors}); return;}
+  const input = parsed.data;
+  res.json(await setVertical(actorFrom(req), String(req.params.combatId), String(req.params.combatantId), input));
+});
+combatRouter.post('/:combatId/spatial/elevation-requests', authenticate, async (req, res) => {
+  const parsed = elevationRequestSchema.safeParse(req.body);
+  if (!parsed.success) {res.status(400).json({error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors}); return;}
+  res.json(await requestElevation(actorFrom(req), String(req.params.combatId), parsed.data));
+});
+combatRouter.get('/:combatId/spatial/elevation-requests', authenticate, requireRole('MASTER'), async (req, res) => {
+  res.json({requests: await elevationRequestsFor(actorFrom(req), String(req.params.combatId))});
+});
+combatRouter.post('/:combatId/spatial/elevation-requests/:requestId', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = elevationDecisionSchema.safeParse(req.body);
+  if (!parsed.success) {res.status(400).json({error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors}); return;}
+  res.json(await decideElevation(actorFrom(req), String(req.params.combatId), String(req.params.requestId), parsed.data));
+});
+
 combatRouter.post('/:combatId/spatial/movement', authenticate, async (req, res) => {
   const parsed = movementCommitSchema.safeParse(req.body ?? {});
   if (!parsed.success) {

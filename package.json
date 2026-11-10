@@ -25,6 +25,7 @@
     "seed:phb-items": "tsx src/scripts/seed-phb-items.ts",
     "smoke": "tsx src/scripts/smoke-realtime.ts",
     "test:operation-id": "tsx client/scripts/check-operation-id.ts",
+    "test:elevation": "tsx src/scripts/check-elevation.ts",
     "test:area-preview": "tsx --tsconfig client/tsconfig.json client/scripts/check-area-preview-render.tsx && tsx --tsconfig client/tsconfig.json client/scripts/check-grid-radial-render.tsx",
     "test:obstacle-cover": "tsx src/scripts/check-obstacle-cover.ts",
     "test:line-of-sight": "tsx src/scripts/check-line-of-sight.ts",

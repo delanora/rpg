@@ -43,6 +43,12 @@ import type { SpatialObstacleShape } from './spatial-obstacle.js';
  */
 
 export interface SpatialOperationInput {
+  elevationFeet?: number | null;
+  bodyHeightFeet?: number | null;
+  elevationRequestId?: string;
+  path?: SpatialPosition2D[];
+  approve?: boolean;
+  additionalCostFeet?: number;
   combatId: string;
   expectedVersion: number;
   operationId: string;

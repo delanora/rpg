@@ -1,7 +1,7 @@
 # Roadmap de desenvolvimento — Obsyrium RPG
 
 > **Guia de contexto para agentes que trabalham no repositório `delanora/rpg`.**
-> Estado consolidado em **09/11/2026**, com base no código da `main` e na aba **Roadmap** do documento *Codex do Aventureiro*.
+> Estado consolidado em **10/11/2026**, com base no código da `main` e na aba **Roadmap** do documento *Codex do Aventureiro*.
 > Este arquivo resume **o que existe, o que está parcial e o que vem depois**. Não substitui a inspeção do código.
 
 ## 1. Leitura obrigatória e fontes de verdade
@@ -23,7 +23,7 @@
 - **UI de combate:** workspace com grid central, iniciativa, registro e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
 - **6.6M.9–9.2:** Golden Path de sessão jogável e consistência de deslocamento foram marcados como ✅ no Roadmap compartilhado; há teste integrado `src/scripts/smoke-combat-playable.ts`.
 - **Trabalho recente:** paredes com bloqueios independentes de movimento e ataques/magias; caminho livre validado nos casos claros, além do editor, ping e menus dos tokens.
-- **Próxima frente de produto:** seleção de atingidos e validação de áreas pelo servidor. Prévias locais das cinco formas e menu radial já permitem dimensionar, posicionar e orientar no grid. Visão e cobertura por obstáculos estão automatizadas nos casos claros.
+- **Próxima frente de produto:** integrar elevações e altura corporal à seleção de atingidos e validação de áreas pelo servidor. Pincel de terreno e travessias com decisão do Mestre implementados no escopo assistido. Prévias locais das cinco formas e menu radial já permitem dimensionar, posicionar e orientar no grid. Visão e cobertura por obstáculos estão automatizadas nos casos claros.
 - **Não concluir que “PHB completo” está pronto:** existem lacunas de magias especiais, características, reações avançadas, passagem do tempo fora de combate e ferramentas do Mestre.
 
 ## 3. Regras de arquitetura que nenhuma etapa deve violar
@@ -150,6 +150,7 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 | **6.6L — Linha de visão / caminho livre** | ✅ casos claros; 🟡 expansão | Flags independentes, footprints completos e visão no ponto de saída do alcance. Paredes distantes não pedem confirmação; barreiras opacas completas impedem a oportunidade e magias que exigem visão. Cantos, frestas, iluminação e sentidos especiais seguem assistidos ou planejados. |
 | **6.6J.5 / 6.6L — Cobertura geométrica** | ✅ casos claros; 🟡 expansão | Mestre define nenhuma, meia, três quartos ou total no obstáculo. Servidor aplica o maior grau interposto, sem somar; movimento e visão independentes. Cantos, frestas e altura seguem assistidos. |
 | **6.6J.3 — Áreas no grid** | ✅ prévias e radial; 🟡 expansão | Esfera, cone, linha, cubo e cilindro com dimensões em metros, posição/direção e confirmação. Radial em anel com ícones, nome central e expansão da fatia apontada; abre neutro e mantém tamanho no zoom. Reúne Áreas e Encontro para o Mestre. Próximo: seleção de atingidos pelo servidor; prévias continuam locais e visuais. |
+| **Elevações e desníveis** | ✅ fundação assistida | Pincel por quadrados, altura em metros, plataformas/fossos e altura corporal por token. Travessias dependem do Mestre, com custo adicional e reações preservadas. Geometria vertical completa e atingidos por áreas seguem na próxima integração. |
 | **Unidades FEET/METERS — normalização interna** | ⬜ dívida arquitetural | Auditoria e migração/versionamento explícitos para campos legados em metros, especialmente `TurnEconomy`/JSONB de combates ativos; não fazer conversão oportunista. |
 
 ### Prioridade 2 — Ampliar conteúdo PHB executável

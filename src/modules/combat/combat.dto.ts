@@ -1,3 +1,4 @@
+import { surfaceElevation } from './spatial/elevation.js';
 import { planNextTurn } from './turn-order.js';
 import type { CombatDuelDto } from '../shared/duels.js';
 import type { HostilityPromptDto } from '../shared/hostility.js';
@@ -49,6 +50,8 @@ import {
  * cliente. `spatial` é `null` quando o combatente é privado do Mestre.
  */
 export interface CombatantSpatialDto {
+  elevationFeet?: number | null;
+  bodyHeightFeet?: number | null;
   tokenImageRef: string | null;
   baseSize: SpatialSize;
   effectiveSize: SpatialSize;
@@ -198,6 +201,7 @@ export interface CombatantDto {
  * Evita depender dos genéricos do Prisma em toda a aplicação.
  */
 export interface CombatSourced {
+  turnSequence?: number;
   extraTurnResumeAfterId?: string | null;
   duels?: { id: string; requesterId: string; challengedId: string; status: string }[];
   hostilityPrompts?: HostilityPromptDto[];
@@ -259,6 +263,8 @@ export interface CombatantSourced {
    * Posição 2D em PÉS desta INSTÂNCIA (`null` = unplaced) e tamanho BASE
    * derivado da raça/cadastro por `withSpatial`. Nunca vêm do cliente.
    */
+  elevationFeet?: number | null;
+  bodyHeightFeet?: number | null;
   spatialPosition?: unknown;
   baseSize?: SpatialSize;
   /** Lado do ENCONTRO (`null` = relação desconhecida, nunca inferida). */
@@ -424,6 +430,8 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     armorNonProficiency: armorClassDetail?.armorNonProficiency ?? null,
     spatialVisibility,
     spatial: {
+      elevationFeet: combatant.elevationFeet ?? null,
+      bodyHeightFeet: combatant.bodyHeightFeet ?? null,
       tokenImageRef: combatant.character?.avatarUrl || combatant.tokenImageUrl || combatant.creature?.imageUrl || null,
       baseSize,
       effectiveSize,
@@ -449,7 +457,11 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
   const ordered =
     combat.status === 'ACTIVE' ? orderCombatants(combat.combatants) : [...combat.combatants];
 
-  const combatants = ordered.map(toCombatantDto);
+  const scene = effectiveSceneConfigOf(combat);
+  const combatants = ordered.map(unit => {
+    const position = parseStoredPosition(unit.spatialPosition);
+    return toCombatantDto({...unit, elevationFeet: unit.elevationFeet ?? (position ? surfaceElevation(scene, position, unit.baseSize ?? 'medium') : null)});
+  });
   const current =
     combat.status === 'ACTIVE' ? (combatants[combat.currentIndex] ?? null) : null;
 

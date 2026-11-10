@@ -1,3 +1,4 @@
+import { CombatHeightPanel } from './CombatHeightPanel';
 import { CreatureAbilitiesPanel } from './CreatureAbilitiesPanel';
 import { setSpatialVisibility } from '../grid/gridApi';
 import { useState } from 'react';
@@ -11,7 +12,7 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
   combat: CombatDto; combatant: CombatantDto; busy: boolean; effectsRefresh: number;
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
-  const [tab, setTab] = useState<'conditions' | 'hp' | 'economy' | 'relation' | 'abilities'>('conditions');
+  const [tab, setTab] = useState<'conditions' | 'hp' | 'economy' | 'relation' | 'abilities' | 'height'>('conditions');
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [amount, setAmount] = useState('5');
   const specificHostileIds = (combatant.hostileToIds ?? []).filter(id => !(combatant.kind === 'CHARACTER' && combat.combatants.find(unit => unit.id === id)?.kind === 'CHARACTER'));
@@ -20,12 +21,13 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
   const valid = Number.isInteger(value) && value >= 1 && value <= 9999;
   return <>
     <div className="combat-token-menu-tabs" role="group" aria-label="Tipo de ajuste">
-      {([['conditions', 'Condições e efeitos'], ['hp', 'Vida'], ['economy', 'Economia'], ['relation', 'Relação'], ...(combatant.creatureId ? [['abilities', 'Habilidades'] as const] : [])] as const).map(([key, label]) =>
+      {([['conditions', 'Condições e efeitos'], ['hp', 'Vida'], ['economy', 'Economia'], ['relation', 'Relação'], ['height', 'Altura'], ...(combatant.creatureId ? [['abilities', 'Habilidades'] as const] : [])] as const).map(([key, label]) =>
         <button key={key} type="button" className={tab === key ? 'active' : ''}
           aria-pressed={tab === key} disabled={key === 'economy' && combat.status !== 'ACTIVE'}
           title={key === 'economy' && combat.status !== 'ACTIVE' ? 'Disponível após a iniciativa.' : undefined} onClick={() => setTab(key)}>{label}</button>)}
     </div>
     <div className="combat-token-menu-body">
+      {tab === 'height' ? <CombatHeightPanel key={`${combatant.id}:${combat.version}`} combat={combat} combatant={combatant} busy={busy} onRun={onRun} /> : null}
       {tab === 'abilities' ? <CreatureAbilitiesPanel combat={combat} combatant={combatant} busy={busy} onRun={onRun} /> : null}
       {tab === 'conditions' ? <MechanicalPanel entity={{ kind: 'combatant', id: combatant.id }}
         refreshVersion={combat.version} effectsRefresh={effectsRefresh} variant="token"

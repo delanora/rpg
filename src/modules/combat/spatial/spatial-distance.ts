@@ -1,3 +1,4 @@
+import { surfaceElevation } from './elevation.js';
 import { occupiedSpaceOf, occupiedSpacesOverlap } from './occupied-space.js';
 import {
   GRID_CELL_SIZE_FEET,
@@ -40,6 +41,7 @@ export const TINY_GRID_STEP_FEET = 2.5;
 
 /** Motivos de NÃO ter distância (nunca um número inventado). */
 export type SpatialDistanceReason =
+  | 'vertical-adjudication'
   | 'assisted-mode'
   | 'source-unplaced'
   | 'target-unplaced'
@@ -124,6 +126,8 @@ export function anchorDistanceFeet(a: SpatialPosition2D, b: SpatialPosition2D): 
 }
 
 export interface SpatialBody {
+  elevationFeet?: number | null;
+  bodyHeightFeet?: number | null;
   position: SpatialPosition2D | null | undefined;
   size: SpatialSize;
 }
@@ -224,6 +228,9 @@ export function evaluateSpatialDistance(
   if (!isGridAligned(target.position, target.size)) {
     return { status: 'unknown', reason: 'target-not-canonical' };
   }
+  const sourceLevel = source.elevationFeet ?? surfaceElevation(scene, source.position, source.size);
+  const targetLevel = target.elevationFeet ?? surfaceElevation(scene, target.position, target.size);
+  if (sourceLevel === null || targetLevel === null || Math.abs(sourceLevel - targetLevel) > 1e-6) return {status: 'unknown', reason: 'vertical-adjudication'};
   const distanceFeet = bodyDistanceFeet(source, target);
   if (distanceFeet === null) return { status: 'unknown', reason: 'source-unplaced' };
   return {

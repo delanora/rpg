@@ -83,6 +83,8 @@ export function combatSpatialIndex(combat: CombatSourced): CombatSpatialIndex {
   }
   for (const combatant of combat.combatants) {
     const body: SpatialBody = {
+      elevationFeet: combatant.elevationFeet,
+      bodyHeightFeet: combatant.bodyHeightFeet,
       position: parseStoredPosition(combatant.spatialPosition),
       size: (combatant.baseSize ?? 'medium') as SpatialSize,
     };
@@ -156,7 +158,8 @@ export function bodiesDistanceFeet(
   target: SpatialBody,
 ): number | null {
   if (scene.mode !== 'grid-2d') return null;
-  return bodyDistanceFeet(source, target);
+  const evaluation = evaluateSpatialDistance(scene, source, target);
+  return evaluation.status === 'known' ? evaluation.distanceFeet : null;
 }
 
 /**

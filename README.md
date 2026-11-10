@@ -144,7 +144,17 @@ Salvaguardas mantêm o movimento pausado até a resolução. Dano, morte ou Para
 
 Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas/NPCs, cadastre uma habilidade **Passiva → Conjurador de Guerra (PHB 2014)** no bestiário, além do repertório e perfil de conjuração. O nome livre da habilidade não concede a regra. O talento também concede vantagem nos testes de concentração por dano e permite gestos somáticos com arma/escudo na mão; não dispensa componentes materiais nem supera bloqueios de componentes.
 
-**Próxima etapa:** áreas no grid; iluminação e sentidos especiais permanecem como expansões próprias.
+**Próxima etapa:** integrar alturas à seleção de atingidos por áreas; iluminação e sentidos especiais permanecem como expansões próprias.
+
+### Elevações e desníveis
+
+No editor da cena, o **pincel de elevação** pinta quadrados e abre uma caixa para informar a altura em metros. Valores negativos criam fossos; zero ou Apagar restaura o chão. A superfície é persistida em pés, com versão/idempotência da cena, e aparece no grid do combate. A cena em uso continua bloqueada para edição.
+
+O menu do token oferece **Altura**, com elevação da base e altura corporal independentes do tamanho do token. Sem elevação explícita, a base acompanha a superfície; sem altura corporal, a avaliação vertical permanece assistida. Há uma superfície por quadrado; pontes sobrepostas não são representadas nesta fundação.
+
+Arrastar por um desnível envia o trajeto para decisão privada do Mestre, sem mover nem gastar recursos. O Mestre autoriza ou recusa e pode definir custo adicional em metros. A autorização revalida o trajeto e mantém as oportunidades de ataque; o adicional é gasto uma vez ao autorizar, inclusive quando uma reação pausa o movimento. Pedidos de outro turno ou de uma origem alterada não autorizam a travessia.
+
+Esta é uma adjudicação explícita do aplicativo, sem automatizar escalada, salto, voo ou dano de queda. Distâncias entre níveis distintos e paredes sem informação vertical continuam assistidas. A seleção automática de atingidos por áreas segue como próxima integração; a convenção aprovada é contar qualquer sobreposição parcial e pedir confirmação quando faltarem dados de altura.
 
 ### Prévias de áreas e menu radial
 

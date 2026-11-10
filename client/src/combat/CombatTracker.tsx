@@ -1,3 +1,4 @@
+import { ElevationRequests } from './components/ElevationRequests';
 import { CreatureAbilitiesPanel } from './components/CreatureAbilitiesPanel';
 import { CombatReinforcements } from './components/CombatReinforcements';
 import { AssumedCharacterPendings, pendingsForCharacter } from './components/AssumedCharacterPendings';
@@ -1498,6 +1499,8 @@ export function CombatTracker({
     <section className="combat-panel">
       <CombatIntro combatId={combat.id} />
         {tokenMenu}
+
+      {isMaster ? <ElevationRequests combat={combat} onCombatChange={onCombatChange} /> : null}
 
       {/* Toast central (2 s, sem clique, sem bloquear a interface). */}
       <TurnToast alert={turnAlert} />

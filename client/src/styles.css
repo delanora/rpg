@@ -17984,3 +17984,14 @@ body:has(.app-shell.has-ongoing-combat) .roll-log-fab:is(:hover, :focus-visible)
     transition: none;
   }
 }
+
+.combat-elevation-request { display: grid; gap: .6rem; padding: .85rem 1rem; margin-bottom: .75rem; border: 1px solid var(--gold); border-radius: .6rem; background: var(--surface); }
+.combat-elevation-request label { display: flex; align-items: center; gap: .75rem; }
+.combat-elevation-request input { width: 7rem; }
+.combat-elevation-request small { opacity: .8; }
+.grid-token-elevation { display: block; font-size: .8em; color: var(--gold); }
+.grid-elevations { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.grid-elevations rect { fill: #c8a44b18; stroke: #c8a44b66; stroke-width: .08; }
+.grid-elevations .is-low rect { fill: #538aad20; stroke: #83b1d066; }
+.grid-elevations text { fill: #fff1c7; font: 1px sans-serif; paint-order: stroke; stroke: #15120c; stroke-width: .22px; opacity: .85; }
+.combat-elevation-route { width: min(100%, 20rem); max-height: 12rem; background: #16110d; border-radius: .35rem; }

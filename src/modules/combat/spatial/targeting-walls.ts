@@ -1,3 +1,4 @@
+import { surfaceElevation } from './elevation.js';
 import type { SpatialBody } from './spatial-distance.js';
 import { occupiedSpaceOf, spaceWithinScene } from './occupied-space.js';
 import { classifySegmentIntersection, SPATIAL_GEOMETRY_EPSILON_FEET as EPSILON,
@@ -94,6 +95,9 @@ export function evaluateWallPath(scene: SpatialSceneConfig, source: SpatialBody 
   if (!from || !to) return unknown;
   if (!spaceWithinScene(from, scene) || !spaceWithinScene(to, scene)) return unknown;
   if (source === target) return { result: 'pass', reason: 'clear' };
+  const sourceLevel = source.elevationFeet ?? surfaceElevation(scene, source.position, source.size);
+  const targetLevel = target.elevationFeet ?? surfaceElevation(scene, target.position, target.size);
+  if (sourceLevel === null || targetLevel === null || Math.abs(sourceLevel - targetLevel) > EPSILON) return unknown;
   if (walls.some(wall => (wall.blocksTargeting ?? wall.blocksMovement) &&
     (![wall.start.xFeet, wall.start.yFeet, wall.end.xFeet, wall.end.yFeet].every(Number.isFinite) ||
       Math.hypot(wall.end.xFeet - wall.start.xFeet, wall.end.yFeet - wall.start.yFeet) <= EPSILON))) return unknown;
@@ -102,6 +106,8 @@ export function evaluateWallPath(scene: SpatialSceneConfig, source: SpatialBody 
   let partial = false;
   for (const line of mergeTargetingWalls(walls)) {
     if (!intersectsCorridor(line, corridor)) continue;
+    // Paredes não têm intervalo vertical cadastrado: não tratá-las como infinitas.
+    if (Math.abs(sourceLevel) > EPSILON || Math.abs(targetLevel) > EPSILON) return unknown;
     partial = true;
     const sidesA = a.map(point => side(point, line)), sidesB = b.map(point => side(point, line));
     // Footprint encostado/atravessado por parede fica para o Mestre nesta etapa.

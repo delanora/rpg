@@ -1,3 +1,4 @@
+import { elevationAfterMovement, elevationDecisionRequired, surfaceElevation } from './elevation.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
@@ -74,6 +75,7 @@ import { movementReactionRiskOf, type MovementReactionRisk } from './opportunity
  */
 
 export interface MovementCommitInput {
+  elevationApproval?: {requestId: string; additionalCostFeet: number};
   combatId: string;
   combatantId: string;
   expectedVersion: number;
@@ -135,6 +137,7 @@ export interface MovementBoundaryDiagnostic {
 }
 
 export interface MovementPreviewResult {
+  elevationDecisionRequired?: boolean;
   movement: MovementPathEvaluation;
   reaction: {
     risk: MovementReactionRisk;
@@ -371,6 +374,7 @@ export async function applyMovementEvaluation(
     where: { id: combatant.id },
     data: {
       spatialPosition: destination as unknown as Prisma.InputJsonValue,
+      ...(destination ? {elevationFeet: elevationAfterMovement(effectiveSceneConfigOf(combat), parseStoredPosition(combatant.spatialPosition), destination, combatant.baseSize ?? 'medium', combatant.elevationFeet)} : {}),
       // Só o gasto volta ao estado nominal; persistir a projeção reaplicaria
       // Exaustão/bônus na próxima leitura e em cada retomada de OA.
       turnEconomy: { ...economyOf(combatant.turnEconomy), movementUsed: economy.movementUsed } as unknown as Prisma.InputJsonValue,
@@ -436,6 +440,7 @@ export async function previewVoluntaryMovement(
       )
     : [];
   return {
+    elevationDecisionRequired: elevationDecisionRequired(effectiveSceneConfigOf(combat), parseStoredPosition(combatant.spatialPosition), combatant.baseSize ?? 'medium', path, combatant.elevationFeet),
     movement,
     reaction: {
       risk: movementReactionRiskOf({
@@ -615,6 +620,33 @@ export async function commitVoluntaryMovement(
           );
         }
 
+        const origin = parseStoredPosition(combatant.spatialPosition);
+        const scene = effectiveSceneConfigOf(combat);
+        const level = combatant.elevationFeet ?? (origin ? surfaceElevation(scene, origin, combatant.baseSize ?? 'medium') : null);
+        const needsElevation = elevationDecisionRequired(scene, origin, combatant.baseSize ?? 'medium', input.path, level);
+        if (input.elevationApproval) {
+          if (actor.role !== 'MASTER') throw new HttpError('Somente o Mestre autoriza desníveis.', 403);
+          const request = await db.elevationRequest.findUnique({where: {id: input.elevationApproval.requestId}});
+          if (!request || request.combatId !== combat.id || request.combatantId !== combatant.id || request.status !== 'pending' || request.turnSequence !== combat.turnSequence || JSON.stringify(request.path) !== JSON.stringify(input.path)) {
+            throw new HttpError('A travessia mudou ou já foi decidida.', 409, 'CONFLICT');
+          }
+          const storedOrigin = request.origin as {position: unknown; elevationFeet: number | null};
+          if (JSON.stringify(storedOrigin.position) !== JSON.stringify(origin) || storedOrigin.elevationFeet !== level) throw new HttpError('O token mudou de posição ou altura. Solicite novamente.', 409, 'CONFLICT');
+          // Custo extra explícito consumido uma vez na autorização, inclusive se uma Reação pausar o trajeto.
+          const extra = input.elevationApproval.additionalCostFeet;
+          if (extra > 0) {
+            const economy = movementEconomyOf(combatant);
+            moveDistance(economy, feetToMeters(extra));
+            const nominal = {...economyOf(combatant.turnEconomy), movementUsed: economy.movementUsed};
+            await db.combatant.update({where: {id: combatant.id}, data: {turnEconomy: nominal as unknown as Prisma.InputJsonValue}});
+            combatant.turnEconomy = nominal;
+            await appendMovementLog(db, combat, combatant, `Travessia autorizada pelo Mestre: custo adicional de ${formatMetersPtBr(extra)}.`);
+          }
+          await db.elevationRequest.update({where: {id: request.id}, data: {status: 'approved'}});
+        } else if (needsElevation) {
+          throw new HttpError('Este trajeto cruza um desnível e precisa da decisão do Mestre.', 409, 'MOVEMENT_ELEVATION_DECISION_REQUIRED');
+        }
+
         // REVALIDAÇÃO no commit: o preview não é autoridade.
         const evaluation = evaluateMovementForState(combat, combatant, input.path, true);
         if (!evaluation.legal) {
@@ -691,6 +723,7 @@ export async function commitVoluntaryMovement(
           where: { id: combatant.id },
           data: {
             spatialPosition: checkpoint as unknown as Prisma.InputJsonValue,
+            ...(checkpoint ? {elevationFeet: elevationAfterMovement(scene, position, checkpoint, combatant.baseSize ?? 'medium', combatant.elevationFeet)} : {}),
             turnEconomy: { ...economyOf(combatant.turnEconomy), movementUsed: economy.movementUsed } as unknown as Prisma.InputJsonValue,
           },
         });
