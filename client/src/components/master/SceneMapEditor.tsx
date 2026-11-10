@@ -59,8 +59,6 @@ export function SceneMapEditor({
 }: Props) {
   const [tool, setTool] = useState<Tool>('select');
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const cursor = useRef<{ x: number; y: number }>({ x: 160, y: 130 });
-  const [heightAnchor, setHeightAnchor] = useState(cursor.current);
   const [heightValue, setHeightValue] = useState('0');
   const root = useRef<HTMLDivElement>(null);
   const [radial, setRadial] = useState<{
@@ -105,7 +103,6 @@ export function SceneMapEditor({
     setRadial({ point, phase });
   };
   const selectHeight = () => {
-    setHeightAnchor(cursor.current);
     setTool('elevation');
     closeRadial();
   };
@@ -445,10 +442,6 @@ export function SceneMapEditor({
       ref={root}
       className={`scene-map-editor${fullScreen ? ' scene-map-editor--fullscreen' : ''}`}
       data-inspector-open={inspectorOpen}
-      onPointerMoveCapture={(event) => {
-        if (event.pointerType !== 'touch')
-          cursor.current = { x: event.clientX, y: event.clientY };
-      }}
       tabIndex={-1}
       onFocusCapture={(event) => {
         if (sceneInputTarget(event.target)) camera.stop();
@@ -508,7 +501,6 @@ export function SceneMapEditor({
         <SceneElevationEditor
           embedded
           cursorPalette
-          initialPointer={heightAnchor}
           heightValue={heightValue}
           onHeightChange={setHeightValue}
           scene={scene}

@@ -255,15 +255,33 @@ try {
     host.querySelectorAll('.fixture-map').length === 1 &&
       host.querySelectorAll('.scene-map-saved-layer line').length === 1,
   );
+  const slider = host.querySelector<HTMLInputElement>(
+    '[aria-label="Elevação do terreno em metros"]',
+  )!;
+  check(
+    'Barra começa em zero no centro entre −100 e +100 metros',
+    slider.type === 'range' &&
+      slider.min === '-100' &&
+      slider.max === '100' &&
+      slider.value === '0',
+  );
   await pointer('pointerdown', 60, 60);
+  check(
+    'Barra recolhe durante a pintura',
+    (host.querySelector('.scene-height-cursor') as HTMLElement).hidden,
+  );
   await pointer('pointermove', 160, 60);
   await pointer('pointerup', 160, 60);
+  check(
+    'Barra reaparece ao soltar o pincel',
+    !(host.querySelector('.scene-height-cursor') as HTMLElement).hidden,
+  );
   check('Pintura não escreve antes de confirmar', calls.length === 0);
   check(
     'Rascunho impede alternar e perder a seleção',
     button('Desenhar parede').disabled,
   );
-  await input('-1,5');
+  await input('-1.5');
   await pressSpace(host.querySelector('[data-scene-save-on-space]')!);
   check(
     'Confirma metros negativos em pés pelo mesmo contrato',

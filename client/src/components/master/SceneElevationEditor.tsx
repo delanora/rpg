@@ -5,7 +5,6 @@ import {
   useState,
   type PointerEvent,
   type ReactNode,
-  type CSSProperties,
 } from 'react';
 import { ApiError } from '../../api';
 import type { ElevationCell, Scene, ScenePatch } from '../../types';
@@ -14,7 +13,6 @@ import { feetToMeters, metersToElevationFeet } from '../../sceneUnits';
 
 interface Props {
   cursorPalette?: boolean;
-  initialPointer?: { x: number; y: number };
   heightValue?: string;
   onHeightChange?: (value: string) => void;
   embedded?: boolean;
@@ -40,7 +38,6 @@ export function SceneElevationEditor({
   sharedZoom,
   onSessionChange,
   cursorPalette = false,
-  initialPointer,
   heightValue,
   onHeightChange,
 }: Props) {
@@ -53,9 +50,7 @@ export function SceneElevationEditor({
     setLocalHeight(value);
     onHeightChange?.(value);
   };
-  const [cursorPoint, setCursorPoint] = useState(
-    initialPointer ?? { x: 160, y: 130 },
-  );
+  const [painting, setPainting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -129,6 +124,7 @@ export function SceneElevationEditor({
   function cancel() {
     if (busy || uncertain) return;
     stroke.current = null;
+    setPainting(false);
     setSelection(new Map());
     setEditing(false);
     setError(null);
@@ -209,40 +205,40 @@ export function SceneElevationEditor({
     <form
       className="scene-height-cursor"
       aria-label="Definir elevação"
-      style={
-        {
-          left: Math.max(
-            8,
-            Math.min(cursorPoint.x - 62, window.innerWidth - 280),
-          ),
-          top: Math.max(
-            8,
-            Math.min(
-              cursorPoint.y + 18,
-              window.innerHeight - (error ? 112 : 64),
-            ),
-          ),
-        } as CSSProperties
-      }
+      hidden={painting}
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
       <label>
-        <span>Altura</span>
-        <input
-          autoFocus
-          data-scene-save-on-space
-          aria-label="Elevação do terreno em metros"
-          type="text"
-          inputMode="decimal"
-          value={height}
-          disabled={disabled || busy || uncertain || stale}
-          onChange={(event) => setHeight(event.target.value)}
-        />
+        <span className="scene-height-heading">
+          Altura{' '}
+          <output>
+            {Number(height.replace(',', '.')).toLocaleString('pt-BR')} m
+          </output>
+        </span>
+        <span className="scene-height-range">
+          <input
+            autoFocus
+            data-scene-save-on-space
+            aria-label="Elevação do terreno em metros"
+            type="range"
+            min={-100}
+            max={100}
+            step={0.25}
+            aria-valuetext={`${Number(height.replace(',', '.')).toLocaleString('pt-BR')} metros`}
+            value={height}
+            disabled={disabled || busy || uncertain || stale}
+            onChange={(event) => setHeight(event.target.value)}
+          />
+        </span>
+        <span className="scene-height-scale" aria-hidden="true">
+          <span>−100 m</span>
+          <span>0</span>
+          <span>+100 m</span>
+        </span>
       </label>
-      <span className="scene-height-unit">m</span>
       {selection.size > 0 ? (
         <>
           <button
@@ -302,8 +298,7 @@ export function SceneElevationEditor({
       onPointerDown={(event) => {
         if (!editable || editing || event.button !== 0) return;
         event.preventDefault();
-        if (cursorPalette)
-          setCursorPoint({ x: event.clientX, y: event.clientY });
+        setPainting(true);
         draftVersion.current = scene.version;
         stroke.current = {
           pointerId: event.pointerId,
@@ -317,16 +312,13 @@ export function SceneElevationEditor({
       }}
       onPointerMove={(event) => {
         if (stroke.current?.pointerId === event.pointerId) {
-          if (cursorPalette)
-            setCursorPoint({ x: event.clientX, y: event.clientY });
           paint(event);
         }
       }}
       onPointerUp={(event) => {
         if (stroke.current?.pointerId !== event.pointerId) return;
         stroke.current = null;
-        if (cursorPalette)
-          setCursorPoint({ x: event.clientX, y: event.clientY });
+        setPainting(false);
         svg.current?.releasePointerCapture?.(event.pointerId);
         setEditing(true);
         const p = point(event);
@@ -338,10 +330,12 @@ export function SceneElevationEditor({
           );
       }}
       onPointerCancel={() => {
+        setPainting(false);
         stroke.current = null;
         cancel();
       }}
       onLostPointerCapture={() => {
+        setPainting(false);
         if (stroke.current) {
           stroke.current = null;
           setEditing(true);
