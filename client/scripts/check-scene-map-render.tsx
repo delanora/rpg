@@ -26,6 +26,10 @@ for (const key of [
       : key === 'document'
         ? dom.window.document
         : (dom.window as unknown as Record<string, unknown>)[key];
+globals.requestAnimationFrame = dom.window.requestAnimationFrame.bind(
+  dom.window,
+);
+globals.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
 globals.IS_REACT_ACT_ENVIRONMENT = true;
 globals.fetch = () => {
   throw Error('Rede proibida nesta fixture.');
@@ -67,6 +71,7 @@ let disable: (value: boolean) => void = () => {};
 let failSave = false;
 let saved: Scene | null = null;
 const calls: { patch: ScenePatch; version: number; id: string }[] = [];
+const wallPayloads: unknown[] = [];
 let walls = 0,
   checks = 0;
 const check = (label: string, value: unknown) => {
@@ -83,10 +88,19 @@ function Harness() {
     scene: current,
     disabled,
     renderCanvas: (overlay, zoom) =>
-      h('div', { className: 'fixture-map', 'data-zoom': zoom }, overlay),
+      h(
+        'div',
+        { className: 'scene-wall-viewport' },
+        h(
+          'div',
+          { className: 'fixture-map scene-preview', 'data-zoom': zoom },
+          overlay,
+        ),
+      ),
     onReload: async () => scene,
     onWallMutation: async (mutation, version) => {
       walls++;
+      wallPayloads.push(mutation);
       assert.equal(version, scene.version);
       if (mutation.kind === 'create')
         scene = {
@@ -94,7 +108,12 @@ function Harness() {
           version: version + 1,
           obstacles: [
             ...scene.obstacles,
-            { ...mutation.wall, id: 'added', kind: 'wall', lengthFeet: 5 },
+            {
+              ...mutation.wall,
+              id: `added-${walls}`,
+              kind: 'wall',
+              lengthFeet: 5,
+            },
           ],
         };
       update(scene);
@@ -128,6 +147,9 @@ const root = createRoot(host);
 const button = (label: string) => {
   const result =
     host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`) ??
+    document.querySelector<HTMLButtonElement>(
+      `[role="menu"] button[aria-label="${label}"]`,
+    ) ??
     [...host.querySelectorAll<HTMLButtonElement>('button')].find(
       (b) => b.textContent === label,
     );
@@ -170,6 +192,44 @@ const input = async (value: string) =>
     setter.call(node, value);
     node.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   });
+const pressSpace = async (target: Element, repeat = false) =>
+  act(async () => {
+    target.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        repeat,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+const openContext = async () =>
+  act(async () => {
+    const rect = {
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 200,
+      right: 400,
+      bottom: 200,
+      x: 0,
+      y: 0,
+      toJSON() {},
+    };
+    host.querySelector('.scene-preview')!.getBoundingClientRect = () => rect;
+    host
+      .querySelector('.scene-walls-overlay')!
+      .dispatchEvent(
+        new dom.window.MouseEvent('contextmenu', {
+          clientX: 120,
+          clientY: 80,
+          button: 2,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+  });
 try {
   await act(async () => root.render(h(Harness)));
   check(
@@ -186,7 +246,9 @@ try {
   await click('Pincel de elevação');
   check(
     'Trocar ferramenta mantém zoom',
-    host.querySelector('.fixture-map')?.getAttribute('data-zoom') === '1.25',
+    (
+      host.querySelector('.scene-map-canvas') as HTMLElement
+    )?.style.getPropertyValue('--scene-editor-zoom') === '1.25',
   );
   check(
     'Pincel mantém paredes visíveis e um único mapa',
@@ -202,7 +264,7 @@ try {
     button('Desenhar parede').disabled,
   );
   await input('-1,5');
-  await click('Confirmar');
+  await pressSpace(host.querySelector('[data-scene-save-on-space]')!);
   check(
     'Confirma metros negativos em pés pelo mesmo contrato',
     calls.length === 1 &&
@@ -215,6 +277,7 @@ try {
     !button('Desenhar parede').disabled,
   );
   await click('Desenhar parede');
+  await click('Começar a desenhar parede');
   check(
     'Parede ativa mantém elevações recém-salvas',
     host.querySelectorAll('.scene-map-saved-layer .scene-elevation-cell')
@@ -228,20 +291,18 @@ try {
     'Parede em edição protege troca para pincel',
     button('Pincel de elevação').disabled,
   );
-  await click('Salvar parede');
+  await pressSpace(host.querySelector('.scene-walls-overlay')!);
   check('Salvar parede usa contrato existente', walls === 1);
   await click('Pincel de elevação');
   await pointer('pointerdown', 50, 150);
   await pointer('pointerup', 50, 150);
   await act(async () =>
-    host
-      .querySelector('.scene-elevation-editor')!
-      .dispatchEvent(
-        new dom.window.KeyboardEvent('keydown', {
-          key: 'Escape',
-          bubbles: true,
-        }),
-      ),
+    host.querySelector('.scene-elevation-editor')!.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+      }),
+    ),
   );
   check(
     'Esc cancela e libera ferramentas sem escrita',
@@ -292,8 +353,128 @@ try {
   await click('Restaurar zoom da cena');
   check(
     'Restaurar zoom não escreve na cena',
-    host.querySelector('.fixture-map')?.getAttribute('data-zoom') === '1' &&
+    (
+      host.querySelector('.scene-map-canvas') as HTMLElement
+    )?.style.getPropertyValue('--scene-editor-zoom') === '1' &&
       calls.length === before,
+  );
+  await openContext();
+  check(
+    'Botão direito abre radial neutro sem escrever',
+    !!document.querySelector(
+      '[role="menu"][aria-label="Ferramentas do mapa"]',
+    ) &&
+      !document.querySelector('.scene-editor-radial .is-highlighted') &&
+      calls.length === before,
+  );
+  await click('Configurar parede');
+  await click('Escolher cobertura');
+  await click('Meia cobertura');
+  await click('Bloqueia visão');
+  await click('Bloqueia movimento');
+  check(
+    'Radial mantém visão e movimento independentes da cobertura',
+    document
+      .querySelector('[aria-label="Bloqueia visão"]')
+      ?.getAttribute('aria-checked') === 'false' &&
+      document
+        .querySelector('[aria-label="Bloqueia movimento"]')
+        ?.getAttribute('aria-checked') === 'false',
+  );
+  await click('Começar a desenhar parede');
+  await pointer('pointerdown', 50, 50);
+  await pointer('pointerdown', 150, 50);
+  const beforeWall = walls;
+  await pressSpace(host.querySelector('.scene-walls-overlay')!);
+  await pressSpace(host.querySelector('.scene-walls-overlay')!, true);
+  const payload = wallPayloads.at(-1) as {
+    wall: {
+      blocksMovement: boolean;
+      blocksSight: boolean;
+      coverLevel: string;
+      blocksTargeting: boolean;
+    };
+  };
+  check(
+    'Espaço salva uma vez com a configuração escolhida no radial',
+    walls === beforeWall + 1 &&
+      !payload.wall.blocksSight &&
+      !payload.wall.blocksMovement &&
+      payload.wall.coverLevel === 'half' &&
+      !payload.wall.blocksTargeting,
+  );
+  const beforePan = (
+    host.querySelector('.scene-map-canvas') as HTMLElement
+  ).style.getPropertyValue('--scene-editor-pan-x');
+  await act(async () => {
+    host
+      .querySelector('.scene-map-editor')!
+      .dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'd',
+          code: 'KeyD',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    await new Promise((resolve) => setTimeout(resolve, 45));
+    window.dispatchEvent(
+      new dom.window.KeyboardEvent('keyup', { key: 'd', code: 'KeyD' }),
+    );
+  });
+  const afterPan = (
+    host.querySelector('.scene-map-canvas') as HTMLElement
+  ).style.getPropertyValue('--scene-editor-pan-x');
+  check(
+    'WASD move apenas a câmera',
+    beforePan !== afterPan &&
+      walls === beforeWall + 1 &&
+      calls.length === before,
+  );
+  await click('Pincel de elevação');
+  await pointer('pointerdown', 250, 150);
+  await pointer('pointerup', 250, 150);
+  const beforeTyping = (
+    host.querySelector('.scene-map-canvas') as HTMLElement
+  ).style.getPropertyValue('--scene-editor-pan-x');
+  await act(async () => {
+    host
+      .querySelector('input[data-scene-save-on-space]')!
+      .dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'a',
+          code: 'KeyA',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    window.dispatchEvent(
+      new dom.window.KeyboardEvent('keyup', { code: 'KeyA' }),
+    );
+  });
+  check(
+    'Digitar em campo de altura não move câmera',
+    beforeTyping ===
+      (
+        host.querySelector('.scene-map-canvas') as HTMLElement
+      ).style.getPropertyValue('--scene-editor-pan-x'),
+  );
+  await act(async () =>
+    host
+      .querySelector('.scene-map-editor')!
+      .dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+  );
+  check(
+    'Esc no editor cancela rascunho sem salvar',
+    !button('Desenhar parede').disabled && calls.length === before,
   );
   console.log(`${checks} verificações do editor unificado aprovadas.`);
 } finally {

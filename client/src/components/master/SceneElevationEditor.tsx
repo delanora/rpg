@@ -281,6 +281,7 @@ export function SceneElevationEditor({
               Elevação (m)
               <input
                 autoFocus
+                data-scene-save-on-space
                 aria-label="Elevação do terreno em metros"
                 type="text"
                 inputMode="decimal"
@@ -294,6 +295,7 @@ export function SceneElevationEditor({
             </span>
             <div className="scene-background-actions">
               <button
+                data-scene-save-draft
                 className="btn btn-primary btn-small"
                 disabled={disabled || busy || (stale && !uncertain)}
               >
@@ -311,6 +313,7 @@ export function SceneElevationEditor({
                 type="button"
                 className="btn btn-small"
                 disabled={busy || uncertain}
+                data-scene-cancel-draft
                 onClick={cancel}
               >
                 Cancelar
