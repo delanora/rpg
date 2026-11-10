@@ -10,6 +10,7 @@ export type SceneWallSettings = Pick<SceneWallShape, 'blocksMovement' | 'blocksS
 
 interface Props {
   workspace?: boolean;
+  eraseMode?: boolean;
   wallSettings?: SceneWallSettings;
   embedded?: boolean;
   activeTool?: 'select' | 'draw';
@@ -30,7 +31,7 @@ const shapeOf = ({ start, end, blocksMovement, blocksSight, blocksTargeting, cov
   ({ start, end, blocksMovement, blocksSight, coverLevel: coverLevel ?? ((blocksTargeting ?? blocksMovement) ? 'total' : 'none'), blocksTargeting: coverLevel ? coverLevel === 'total' : blocksTargeting ?? blocksMovement });
 
 /** Rascunhos são locais. Só salvar/excluir chama o contrato HTTP da cena. */
-export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas, embedded = false, activeTool, onToolChange, sharedZoom, onSessionChange, wallSettings, workspace = false }: Props) {
+export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas, embedded = false, activeTool, onToolChange, sharedZoom, onSessionChange, wallSettings, workspace = false, eraseMode = false }: Props) {
   const [localTool, setLocalTool] = useState<'select' | 'draw'>('select');
   const tool = activeTool ?? localTool;
   const setTool = (next: 'select' | 'draw') => {setLocalTool(next); onToolChange?.(next);};
@@ -63,7 +64,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
   }
   function select(wall: SpatialObstacle) {
     if (!editable) return;
-    setSegments([]); setTool('select'); setPlacing(false); setConfirmDelete(false); setError(null); setMessage(null);
+    setSegments([]); if (!eraseMode) setTool('select'); setPlacing(false); setConfirmDelete(eraseMode); setError(null); setMessage(null);
     setDraft({ wallId: wall.id, wall: shapeOf(wall), version: scene.version });
   }
   function point(event: PointerEvent<SVGElement>) {
@@ -156,7 +157,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
   }
 
   const overlay = (
-    <svg ref={svg} className={`scene-walls-overlay scene-walls-overlay--${tool}`}
+    <svg ref={svg} className={`scene-walls-overlay scene-walls-overlay--${tool}${eraseMode ? ' scene-overlay--erase' : ''}`}
       viewBox={`0 0 ${config.widthFeet} ${config.heightFeet}`} preserveAspectRatio="none"
       role="group" aria-label="Mapa de edição de paredes" tabIndex={0}
       onPointerDown={begin} onPointerMove={move}
@@ -176,7 +177,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
             className="scene-wall-hit" vectorEffect="non-scaling-stroke"
             pointerEvents={tool === 'select' ? 'stroke' : 'none'}
             aria-label={`Parede ${index + 1}`}
-            onPointerDown={(event) => { if (!editable) return; if (!selected) select(wall);
+            onPointerDown={(event) => { if (!editable) return; if (eraseMode) { event.preventDefault(); event.stopPropagation(); select(wall); return; } if (!selected) select(wall);
               capture(event, 'wall', selected ? draft : { wallId: wall.id, wall: shapeOf(wall), version: scene.version });
             }} />
         </g>;
@@ -185,7 +186,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
         x1={wall.start.xFeet} y1={wall.start.yFeet} x2={wall.end.xFeet} y2={wall.end.yFeet} />)}
       {draft && !draft.wallId ? <line className="scene-wall-draft" vectorEffect="non-scaling-stroke"
         x1={draft.wall.start.xFeet} y1={draft.wall.start.yFeet} x2={draft.wall.end.xFeet} y2={draft.wall.end.yFeet} /> : null}
-      {draft && !placing && segments.length === 0 ? (['start', 'end'] as const).map((part) => <g key={part}>
+      {draft && !eraseMode && !placing && segments.length === 0 ? (['start', 'end'] as const).map((part) => <g key={part}>
         <circle className="scene-wall-handle" cx={draft.wall[part].xFeet} cy={draft.wall[part].yFeet} r={0.4}
           vectorEffect="non-scaling-stroke" />
         <circle className="scene-wall-handle-hit" cx={draft.wall[part].xFeet} cy={draft.wall[part].yFeet} r={0.4}
@@ -239,7 +240,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
             Parede {index + 1} · {formatSceneMeters(wall.lengthFeet)}
           </button>)}
       </div>
-      {draft ? <fieldset className="scene-wall-inspector" disabled={!editable || stale}>
+      {draft && !eraseMode ? <fieldset className="scene-wall-inspector" disabled={!editable || stale}>
         <legend>{draft.wallId ? 'Editar parede' : 'Nova parede'}</legend>
         {segments.length > 0 ? <p className="scene-hint">{segments.length} segmento(s) no traçado. Clique no primeiro ponto para fechar o contorno.</p> :
         <div className="scene-fields">{(['start', 'end'] as const).flatMap((part) => (['xFeet', 'yFeet'] as const).map((axis) =>
@@ -264,7 +265,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
         {invalid ? <p className="form-error">{invalid}</p> : null}
       </fieldset> : null}
     </div>
-    {draft ? <div className="scene-wall-toolbar">
+    {draft && !eraseMode ? <div className="scene-wall-toolbar">
       <button type="button" data-scene-save-draft className="btn btn-primary btn-small" disabled={!editable || stale || (placing && segments.length === 0) || Boolean(invalid)}
         onClick={() => void submit(draft.wallId ? { kind: 'update', wallId: draft.wallId, wall: draft.wall } :
           segments.length > 1 ? { kind: 'create-many', walls: segments } :
@@ -274,11 +275,11 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
       {draft.wallId ? <button type="button" className="btn btn-danger btn-small" disabled={!editable || stale}
         onClick={() => setConfirmDelete(true)}>Excluir parede</button> : null}
     </div> : null}
-    {confirmDelete && draft?.wallId ? <div className="scene-confirm" role="alert">
+    {confirmDelete && draft?.wallId ? <div className={`scene-confirm${eraseMode ? ' scene-eraser-confirm' : ''}`} role="alert">
       <p>Excluir a parede selecionada?</p>
-      <div className="scene-wall-toolbar"><button type="button" className="btn btn-danger btn-small" disabled={!editable || stale}
+      <div className="scene-wall-toolbar"><button type="button" className="btn btn-danger btn-small" data-scene-save-draft disabled={!editable || stale}
         onClick={() => void submit({ kind: 'delete', wallId: draft.wallId! })}>Confirmar exclusão</button>
-      <button type="button" className="btn btn-small" disabled={busy} onClick={() => setConfirmDelete(false)}>Manter parede</button></div>
+      <button type="button" className="btn btn-small" disabled={busy} data-scene-cancel-draft onClick={() => eraseMode ? cancel() : setConfirmDelete(false)}>Manter parede</button></div>
     </div> : null}
     <p className="scene-hint">Paredes com bloqueio de movimento impedem atravessar no modo Mover. “Posicionar”, do Mestre, é um ajuste livre. Visão e cobertura são automáticas nos casos claros; cantos e frestas continuam assistidos.</p>
   </>;

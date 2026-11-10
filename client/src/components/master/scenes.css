@@ -459,3 +459,11 @@
 .scene-preview-frame--overview .scene-wall-viewport { display: grid; place-items: center; max-height: none; overflow: hidden; }
 .scene-preview-frame--overview .scene-preview { max-height: none; }
 @media(max-width:600px) { .scene-base-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } .scene-base-fields .scene-mode { grid-column: 1 / -1; } .scene-base-save { width: 100%; } }
+
+/* A borracha usa as mesmas operações de exclusão e salvamento da cena. */
+.scene-eraser-hint { margin: 0; max-width: 18rem; font-size: var(--text-small); color: var(--ink-soft); }
+.scene-overlay--erase, .scene-overlay--erase .scene-wall-hit { cursor: crosshair; }
+.scene-overlay--erase .scene-wall:hover .scene-wall-line { stroke: var(--danger); }
+.scene-eraser-confirm { position: fixed; z-index: 1250; bottom: 5rem; left: 50%; transform: translateX(-50%); width: min(22rem,calc(100vw - 2rem)); background: var(--surface); border: 1px solid var(--gold-hair); box-shadow: 0 5px 20px #0008; }
+
+.scene-overlay--erase .scene-elevation-selected { fill: color-mix(in srgb,var(--danger) 25%,transparent); stroke: var(--danger); }

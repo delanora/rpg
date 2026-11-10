@@ -13,6 +13,7 @@ import { feetToMeters, metersToElevationFeet } from '../../sceneUnits';
 
 interface Props {
   cursorPalette?: boolean;
+  eraseMode?: boolean;
   heightValue?: string;
   onHeightChange?: (value: string) => void;
   embedded?: boolean;
@@ -38,6 +39,7 @@ export function SceneElevationEditor({
   sharedZoom,
   onSessionChange,
   cursorPalette = false,
+  eraseMode = false,
   heightValue,
   onHeightChange,
 }: Props) {
@@ -115,7 +117,13 @@ export function SceneElevationEditor({
           yFeet:
             Math.round((start.yFeet + (end.yFeet - start.yFeet) * t) / 5) * 5,
         };
-        next.set(`${cell.xFeet}:${cell.yFeet}`, cell);
+        if (
+          !eraseMode ||
+          config.elevationCells?.some(
+            (saved) => saved.xFeet === cell.xFeet && saved.yFeet === cell.yFeet,
+          )
+        )
+          next.set(`${cell.xFeet}:${cell.yFeet}`, cell);
       }
       return next;
     });
@@ -208,44 +216,57 @@ export function SceneElevationEditor({
       hidden={painting}
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        void save(eraseMode);
       }}
     >
-      <label>
-        <span className="scene-height-heading">
-          Altura{' '}
-          <output>
-            {Number(height.replace(',', '.')).toLocaleString('pt-BR')} m
-          </output>
-        </span>
-        <span className="scene-height-range">
-          <input
-            autoFocus
-            data-scene-save-on-space
-            aria-label="Elevação do terreno em metros"
-            type="range"
-            min={-100}
-            max={100}
-            step={0.25}
-            aria-valuetext={`${Number(height.replace(',', '.')).toLocaleString('pt-BR')} metros`}
-            value={height}
-            disabled={disabled || busy || uncertain || stale}
-            onChange={(event) => setHeight(event.target.value)}
-          />
-        </span>
-        <span className="scene-height-scale" aria-hidden="true">
-          <span>−100 m</span>
-          <span>0</span>
-          <span>+100 m</span>
-        </span>
-      </label>
+      {eraseMode ? (
+        <p className="scene-eraser-hint">
+          Borracha de elevações · arraste sobre os quadrados para restaurar o
+          chão.
+        </p>
+      ) : (
+        <label>
+          <span className="scene-height-heading">
+            Altura{' '}
+            <output>
+              {Number(height.replace(',', '.')).toLocaleString('pt-BR')} m
+            </output>
+          </span>
+          <span className="scene-height-range">
+            <input
+              autoFocus
+              data-scene-save-on-space
+              aria-label="Elevação do terreno em metros"
+              type="range"
+              min={-100}
+              max={100}
+              step={0.25}
+              aria-valuetext={`${Number(height.replace(',', '.')).toLocaleString('pt-BR')} metros`}
+              value={height}
+              disabled={disabled || busy || uncertain || stale}
+              onChange={(event) => setHeight(event.target.value)}
+            />
+          </span>
+          <span className="scene-height-scale" aria-hidden="true">
+            <span>−100 m</span>
+            <span>0</span>
+            <span>+100 m</span>
+          </span>
+        </label>
+      )}
       {selection.size > 0 ? (
         <>
           <button
             type="submit"
             data-scene-save-draft
             aria-label={uncertain ? 'Repetir envio' : 'Confirmar'}
-            title={uncertain ? 'Tentar novamente' : 'Salvar altura (Espaço)'}
+            title={
+              uncertain
+                ? 'Tentar novamente'
+                : eraseMode
+                  ? 'Confirmar remoção (Espaço)'
+                  : 'Salvar altura (Espaço)'
+            }
             disabled={disabled || busy || (stale && !uncertain)}
           >
             <Icon name="check" size={15} />
@@ -286,7 +307,7 @@ export function SceneElevationEditor({
   const overlay = (
     <svg
       ref={svg}
-      className="scene-walls-overlay scene-elevation-overlay"
+      className={`scene-walls-overlay scene-elevation-overlay${eraseMode ? ' scene-overlay--erase' : ''}`}
       viewBox={`0 0 ${config.widthFeet} ${config.heightFeet}`}
       preserveAspectRatio="none"
       role="group"
@@ -296,7 +317,8 @@ export function SceneElevationEditor({
         if (event.key === 'Escape') cancel();
       }}
       onPointerDown={(event) => {
-        if (!editable || editing || event.button !== 0) return;
+        if (!editable || (editing && selection.size > 0) || event.button !== 0)
+          return;
         event.preventDefault();
         setPainting(true);
         draftVersion.current = scene.version;

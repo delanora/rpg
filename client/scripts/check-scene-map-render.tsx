@@ -116,6 +116,7 @@ function Harness() {
             },
           ],
         };
+      if (mutation.kind === 'delete') scene = {...scene, version:version + 1, obstacles:scene.obstacles.filter(wall => wall.id !== mutation.wallId)};
       update(scene);
       return scene;
     },
@@ -494,6 +495,24 @@ try {
     'Esc no editor cancela rascunho sem salvar',
     !button('Desenhar parede').disabled && calls.length === before,
   );
+  await act(async () => { scene = {...scene, version: scene.version + 1, spatialConfig: {...scene.spatialConfig, elevationCells:[{xFeet:0,yFeet:0,elevationFeet:5},{xFeet:5,yFeet:0,elevationFeet:10},{xFeet:30,yFeet:15,elevationFeet:-5}]}}; updateScene(scene); });
+  await click('Borracha'); await click('Apagar elevações');
+  const eraseBefore = calls.length;
+  await pointer('pointerdown', 10, 10); await pointer('pointermove', 60, 10); await pointer('pointerup', 60, 10);
+  check('Borracha de altura apenas seleciona antes da confirmação', calls.length === eraseBefore && button('Desenhar parede').disabled);
+  await click('Confirmar');
+  check('Borracha remove só os quadrados pintados e preserva os demais', scene.spatialConfig.elevationCells?.length === 1 && scene.spatialConfig.elevationCells[0].xFeet === 30);
+  await click('Borracha'); await click('Apagar paredes');
+  const wallBefore = walls;
+  const hit = host.querySelector('.scene-wall-hit')!;
+  await act(async () => {const event = new dom.window.MouseEvent('pointerdown', {bubbles:true,button:0}); Object.defineProperty(event,'pointerId',{value:1}); hit.dispatchEvent(event);});
+  check('Borracha de parede pede confirmação sem escrever nem arrastar', walls === wallBefore && !!button('Confirmar exclusão') && !host.querySelector('.scene-wall-handle'));
+  await click('Manter parede');
+  check('Cancelar borracha conserva a parede', walls === wallBefore && scene.obstacles.length > 0);
+  await act(async () => {const event = new dom.window.MouseEvent('pointerdown', {bubbles:true,button:0}); Object.defineProperty(event,'pointerId',{value:2}); hit.dispatchEvent(event);});
+  const wallId = scene.obstacles[0].id;
+  await click('Confirmar exclusão');
+  check('Borracha exclui a parede pela operação existente', walls === wallBefore + 1 && !scene.obstacles.some(wall => wall.id === wallId) && (wallPayloads.at(-1) as {kind:string}).kind === 'delete');
   console.log(`${checks} verificações do editor unificado aprovadas.`);
 } finally {
   await act(async () => root.unmount());
