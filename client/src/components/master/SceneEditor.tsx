@@ -1,10 +1,10 @@
+import { SceneElevationCells } from './SceneElevationEditor';
 import { SceneMapScreen } from './SceneMapScreen';
 import { SceneMapEditor } from './SceneMapEditor';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, fileToImagePayload, uploadImage } from '../../api';
 import {
   feetToMeters,
-  formatSceneFeet,
   formatSceneMeters,
   gridSquaresLabel,
   metersToFeet,
@@ -250,19 +250,20 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
       <Section
         title="Base espacial"
         icon="star"
-        subtitle="Unidade da ficha: metros · o servidor guarda em pés"
+        subtitle="Defina o tamanho do mapa em metros"
       >
-        <div className="scene-fields">
+        <div className="scene-fields scene-base-fields">
           <label className="scene-mode">
-            Modo
+            Tipo de mapa
             <select
               value={mode}
               disabled={!editable}
               onChange={(event) => setMode(event.target.value as SpatialScene['mode'])}
             >
-              <option value="assisted">assistido</option>
-              <option value="grid-2d">grade 2D</option>
+              <option value="assisted">Assistido</option>
+              <option value="grid-2d">Grade 2D</option>
             </select>
+            <span className="scene-squares">{mode === 'grid-2d' ? 'Cada quadrado representa 1,5 m' : 'Sem movimentação automática no grid'}</span>
           </label>
           <label>
             Largura (m)
@@ -285,7 +286,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
             </span>
           </label>
           <label>
-            Altura (m)
+            Comprimento (m)
             <input
               type="number"
               min={1.5}
@@ -301,7 +302,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
           </label>
           <button
             type="button"
-            className="btn btn-primary btn-small"
+            className="btn btn-primary btn-small scene-base-save"
             disabled={!editable}
             onClick={() => void saveSpatial()}
           >
@@ -309,9 +310,8 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
           </button>
         </div>
         <p className="scene-hint">
-          Persistido como {formatSceneFeet(config.widthFeet)} × {formatSceneFeet(config.heightFeet)}{' '}
-          · grade de {formatSceneMeters(SCENE_CELL_FEET)} por quadrado. Reduzir a cena com parede
-          fora dos limites é recusado pelo servidor.
+          Tamanho salvo: {formatSceneMeters(config.widthFeet)} × {formatSceneMeters(config.heightFeet)}.
+          {' '}As medidas acima só são aplicadas ao salvar. Para reduzir o mapa, mantenha as paredes dentro dos novos limites.
         </p>
       </Section>
 
@@ -321,7 +321,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
         subtitle="Opcional — a cena funciona sem ela"
       >
         {scene.backgroundImageUrl && !imageFailed ? (
-          <p className="scene-hint">Imagem atual aplicada no editor do mapa.</p>
+          <figure className="scene-background-preview"><img src={scene.backgroundImageUrl} alt={`Imagem de fundo de ${scene.name}`} onError={() => setImageFailed(true)} /><figcaption>Imagem atual do mapa</figcaption></figure>
         ) : scene.backgroundImageUrl ? (
           <p className="scene-hint">
             A imagem atual não carregou. Você pode trocar ou remover — a base espacial continua
@@ -361,8 +361,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
           ) : null}
         </div>
         <p className="scene-hint">
-          Usa o mesmo envio de imagem das localidades. A imagem NÃO é fonte mecânica: grid,
-          dimensões e paredes independem dela.
+          A imagem é ajustada às dimensões do mapa. A grade, as paredes e as elevações são configuradas separadamente.
         </p>
         {stagedImage && editable ? (
           <p className="scene-hint">
@@ -388,6 +387,13 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
         <div className="scene-map-launcher">
           <div><strong>Paredes e elevações</strong><p className="scene-hint">Mapa ampliado, câmera WASD, pincel de altura e ferramentas radiais.</p></div>
           <button type="button" className="btn btn-primary" disabled={busy || uploading} onClick={() => setMapOpen(true)}><Icon name="table" size={17} /> Editar mapa em tela inteira</button>
+        </div>
+        <div className="scene-map-overview">
+          <ScenePreview scene={scene} imageFailed={imageFailed} onImageError={() => setImageFailed(true)} overview overlay={<svg className="scene-map-saved-layer" aria-hidden="true" viewBox={`0 0 ${config.widthFeet} ${config.heightFeet}`} preserveAspectRatio="none">
+            <SceneElevationCells cells={config.elevationCells ?? []} />
+            {scene.obstacles.map(wall => <line key={wall.id} className={`scene-wall-line ${!wall.blocksMovement ? 'scene-wall-line--passable' : ''}`} x1={wall.start.xFeet} y1={wall.start.yFeet} x2={wall.end.xFeet} y2={wall.end.yFeet} vectorEffect="non-scaling-stroke" />)}
+          </svg>} />
+          <p className="scene-hint">Prévia salva com grade, paredes e elevações. Abra o editor para fazer alterações.</p>
         </div>
       </Section>
       {mapOpen ? <SceneMapScreen scene={scene} locked={mapLocked || busy || uploading} onClose={() => setMapOpen(false)}>
@@ -472,12 +478,14 @@ function ScenePreview({
   onImageError,
   overlay,
   zoom = 1,
+  overview = false,
 }: {
   scene: Scene;
   imageFailed: boolean;
   onImageError: () => void;
   overlay?: ReactNode;
   zoom?: number;
+  overview?: boolean;
 }) {
   const { widthFeet, heightFeet } = scene.spatialConfig;
   const safeWidth = widthFeet > 0 ? widthFeet : 1;
@@ -486,12 +494,12 @@ function ScenePreview({
   const tone = useSceneGridTone(scene.backgroundImageUrl);
 
   return (
-    <div className="scene-preview-frame">
+    <div className={`scene-preview-frame${overview ? ' scene-preview-frame--overview' : ''}`}>
       <div className="scene-wall-viewport">
       <div
         className="scene-preview scene-preview--editable"
-        style={{ aspectRatio: `${safeWidth} / ${safeHeight}`, width: `${zoom * 100}%` }}
-        role={overlay ? 'group' : 'img'}
+        style={{ aspectRatio: `${safeWidth} / ${safeHeight}`, width: overview ? `min(100%, ${18 * safeWidth / safeHeight}rem)` : `${zoom * 100}%` }}
+        role={overlay && !overview ? 'group' : 'img'}
         aria-label={`Prévia da cena ${scene.name}: ${formatSceneMeters(widthFeet)} por ${formatSceneMeters(heightFeet)}`}
       >
         {scene.backgroundImageUrl && !imageFailed ? (

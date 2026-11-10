@@ -437,3 +437,15 @@
   .scene-editor-radial-face { transition: none; }
   .scene-editor-radial-sector.is-highlighted .scene-editor-radial-face { transform: none; }
 }
+
+/* Prévias compactas nas configurações; a edição permanece na tela dedicada. */
+.scene-base-fields { grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 1rem; }
+.scene-base-fields input, .scene-base-fields select { width: 100%; min-height: 2.5rem; box-sizing: border-box; }
+.scene-base-save { grid-column: 1 / -1; justify-self: end; min-width: 10rem; }
+.scene-background-preview { margin: 0 0 .8rem; display: grid; gap: .4rem; justify-items: start; }
+.scene-background-preview img { display: block; width: auto; max-width: 100%; max-height: 12rem; object-fit: contain; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-3); }
+.scene-background-preview figcaption { font-size: var(--text-micro); color: var(--ink-faint); }
+.scene-map-overview { margin-top: 1rem; }
+.scene-preview-frame--overview .scene-wall-viewport { display: grid; place-items: center; max-height: none; overflow: hidden; }
+.scene-preview-frame--overview .scene-preview { max-height: none; }
+@media(max-width:600px) { .scene-base-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } .scene-base-fields .scene-mode { grid-column: 1 / -1; } .scene-base-save { width: 100%; } }

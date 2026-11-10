@@ -5333,7 +5333,7 @@ check(
     'SC8) a UI fala metros e o PAYLOAD continua em PÉS (engine/DB inalterados)',
     editorSource.includes('Largura (m)') &&
       editorSource.includes('{ spatialConfig: { mode, widthFeet, heightFeet } }') &&
-      editorSource.includes('formatSceneFeet(') &&
+      editorSource.includes('formatSceneMeters(config.widthFeet)') &&
       !/widthMeters\s*:/.test(apiSource) &&
       !/heightMeters\s*:/.test(apiSource) &&
       apiSource.includes('PÉS') &&
@@ -5357,7 +5357,7 @@ check(
     editorSource.includes('Nenhuma imagem de fundo.') &&
       editorSource.includes('setImageFailed(true)') &&
       editorSource.includes('A imagem atual não carregou') &&
-      editorSource.includes('independem dela'),
+      editorSource.includes('A grade, as paredes e as elevações são configuradas separadamente.'),
   );
 
   check(
