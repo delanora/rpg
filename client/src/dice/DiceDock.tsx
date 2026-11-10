@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
-import { DeathDie } from './DeathDie';
 import { Die3D } from './Die3D';
 import { announcement, resultBreakdown } from './format';
 import { RemoteRollBoard } from './RemoteRollBoard';
@@ -200,44 +199,30 @@ export function DiceDock({ roller }: DiceDockProps) {
                   <div className="dice-ring-inner">
                     <div className="dice-ring-floor">
                       {settled && result ? (
-                        result.dice.map((die, index) =>
-                          deathSave ? (
-                            // Teste contra a Morte: a face sorteada da folha de
-                            // arte substitui o d20 numérico.
-                            <DeathDie key={`r-${index}`} value={die.value} />
-                          ) : (
-                            <Die3D
-                              key={`r-${index}`}
-                              sides={die.sides}
-                              value={die.value}
-                              reveal
-                              dropped={die.dropped}
-                            />
-                          ),
-                        )
+                        result.dice.map((die, index) => (
+                          <Die3D
+                            key={`r-${index}`}
+                            sides={die.sides}
+                            value={die.value}
+                            reveal
+                            dropped={die.dropped}
+                          />
+                        ))
                       ) : pool.length === 0 ? (
                         <p className="dice-ring-hint">Escolha os dados abaixo</p>
                       ) : (
                         <>
-                          {pool.map((die, index) =>
-                            deathSave ? (
-                              <DeathDie
-                                key={`p-${index}`}
-                                value={null}
-                                tumbling={rolling}
-                              />
-                            ) : (
-                              <Die3D
-                                key={`p-${index}`}
-                                sides={die.sides}
-                                value={null}
-                                reveal={false}
-                                tumbling={rolling}
-                                locked={die.locked}
-                                onClick={rolling || die.locked ? undefined : () => removeDie(index)}
-                              />
-                            ),
-                          )}
+                          {pool.map((die, index) => (
+                            <Die3D
+                              key={`p-${index}`}
+                              sides={die.sides}
+                              value={null}
+                              reveal={false}
+                              tumbling={rolling}
+                              locked={die.locked}
+                              onClick={rolling || die.locked ? undefined : () => removeDie(index)}
+                            />
+                          ))}
 
                           {/* Vantagem/desvantagem: o d20 rola duas vezes, então o segundo
                               dado já entra no ring junto com o primeiro. */}

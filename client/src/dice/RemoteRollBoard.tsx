@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
-import { DeathDie } from './DeathDie';
 import { Die3D } from './Die3D';
 import { resultBreakdown } from './format';
 import type { RemoteBoard } from './useDiceRoller';
@@ -90,41 +89,29 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
           <div className="dice-ring-inner">
             <div className="dice-ring-floor">
               {settled && result ? (
-                result.dice.map((die, index) =>
-                  deathSave ? (
-                    <DeathDie key={`r-${index}`} value={die.value} />
-                  ) : (
-                    <Die3D
-                      key={`r-${index}`}
-                      sides={die.sides}
-                      value={die.value}
-                      reveal
-                      dropped={die.dropped}
-                    />
-                  ),
-                )
+                result.dice.map((die, index) => (
+                  <Die3D
+                    key={`r-${index}`}
+                    sides={die.sides}
+                    value={die.value}
+                    reveal
+                    dropped={die.dropped}
+                  />
+                ))
               ) : board.pool.length === 0 ? (
                 <p className="dice-ring-hint">Escolhendo os dados</p>
               ) : (
                 <>
-                  {board.pool.map((die, index) =>
-                    deathSave ? (
-                      <DeathDie
-                        key={`p-${index}`}
-                        value={null}
-                        tumbling={rolling}
-                      />
-                    ) : (
-                      <Die3D
-                        key={`p-${index}`}
-                        sides={die.sides}
-                        value={null}
-                        reveal={false}
-                        tumbling={rolling}
-                        locked={die.locked}
-                      />
-                    ),
-                  )}
+                  {board.pool.map((die, index) => (
+                    <Die3D
+                      key={`p-${index}`}
+                      sides={die.sides}
+                      value={null}
+                      reveal={false}
+                      tumbling={rolling}
+                      locked={die.locked}
+                    />
+                  ))}
 
                   {/* Vantagem/desvantagem: o d20 rola duas vezes. */}
                   {rolling
