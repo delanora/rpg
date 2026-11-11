@@ -30,15 +30,22 @@ export const creatureAbilitySchema = z
     description: z.string().trim().max(3000).default(''),
     cost: z.enum(['action', 'bonus-action', 'reaction', 'passive']),
     execution: z
-      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster', 'area-save-damage'])
+      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster', 'area-save-damage', 'multiattack'])
       .default('assisted'),
     area: creatureAreaDefinitionSchema.optional(),
+    multiattack: z.array(z.object({attackId:z.string().min(1).max(160),count:z.number().int().min(1).max(20)}).strict()).min(1,'Selecione os ataques que compõem a habilidade.').max(20,'A composição aceita até 20 tipos de ataque.').optional(),
     trigger: z.string().trim().max(500).default(''),
     recharge: z.object({ minimum: z.number().int().min(1).max(6) }).strict().optional(),
     maxUses: z.number().int().min(1).max(100).nullable().default(null),
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.execution === 'multiattack') {
+      const entries=value.multiattack ?? [];
+      const total=entries.reduce((sum,item)=>sum+item.count,0);
+      if(value.cost !== 'action' || total<2 || total>20 || new Set(entries.map(item=>item.attackId)).size!==entries.length)
+        ctx.addIssue({code:'custom',message:'Ataques Múltiplos exige uma Ação e entre 2 e 20 ataques, sem linhas repetidas.'});
+    }
     if (value.recharge && (value.cost === 'passive' || value.maxUses !== 1))
       ctx.addIssue({ code: 'custom', message: 'Recarga em 1d6 exige uma habilidade ativa com um único uso.' });
     if(value.execution==='area-save-damage'&&(!value.area||!['action','bonus-action'].includes(value.cost)))ctx.addIssue({code:'custom',message:'Área com dano exige uma Ação/Ação bônus e forma, CD e dano cadastrados.'});

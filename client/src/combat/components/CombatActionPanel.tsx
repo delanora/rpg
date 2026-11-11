@@ -166,6 +166,7 @@ interface CombatActionPanelProps {
   onAttack: (input: {
     prepared?: boolean;
     attackActionId?: string;
+    multiattackId?: string;
     attackId: string;
     targetCombatantId: string;
     attackerCombatantId?: string;
@@ -297,7 +298,13 @@ export function CombatActionPanel({
 
   const baseAttacks = attackerChoices && attacksFor && attacker ? attacksFor(attacker.id) : attacks;
   // Ataques de arma não equipada somem (só dá para avaliar com o inventário).
-  const availableAttacks = inventory ? selectAvailableAttacks(baseAttacks, inventory) : baseAttacks;
+  const equippedAttacks = inventory ? selectAvailableAttacks(baseAttacks, inventory) : baseAttacks;
+  const multiattack = !prepared && attacker?.turnEconomy.multiattack && attacker.turnEconomy.multiattack.performed < attacker.turnEconomy.multiattack.total ? attacker.turnEconomy.multiattack : null;
+  const availableAttacks = multiattack ? equippedAttacks.filter(attack=>multiattack.attacks.some(item=>item.attackId===attack.id && item.remaining>0)) : equippedAttacks;
+  const remainingAttackIds=availableAttacks.map(attack=>attack.id).join('|');
+  useEffect(()=>{
+    if(multiattack && !availableAttacks.some(attack=>attack.id===attackId))setAttackId(availableAttacks[0]?.id??'');
+  },[multiattack?.id,multiattack?.performed,remainingAttackIds,attackId]);
 
   const targets = combat.combatants.filter((item) => item.id !== attacker?.id && !item.missing);
 
@@ -327,8 +334,8 @@ export function CombatActionPanel({
   const executingPrepared = prepared && hasReady;
   const available = executingPrepared
     ? Boolean(economy?.ready && economy.reactionAvailable && !offhand)
-    : combat.currentCombatantId === attacker?.id && Boolean(economy && (offhand ? !economy.bonusActionUsed : continuation || economy.actionsUsed < economy.actionsGranted));
-  const ready = Boolean(attacker && attackId && targetId) && !ammoMissing && available && Boolean(attacker?.conditionEffects.canAct);
+    : combat.currentCombatantId === attacker?.id && Boolean(economy && (offhand ? !economy.bonusActionUsed : multiattack || continuation || economy.actionsUsed < economy.actionsGranted));
+  const ready = Boolean(attacker && selectedAttack && targetId) && !ammoMissing && available && Boolean(attacker?.conditionEffects.canAct);
 
   /**
    * ENVIO ÚNICO do ataque. O botão "Rolar ataque" e o CONFIRMAR do grid (duplo
@@ -340,7 +347,7 @@ export function CombatActionPanel({
     if (!ready || busy) return;
     onAttack({
       attackId,
-      ...(executingPrepared ? { prepared: true } : !offhand && continuation ? { attackActionId: continuation } : {}),
+      ...(executingPrepared ? { prepared: true } : multiattack ? {multiattackId:multiattack.id} : !offhand && continuation ? { attackActionId: continuation } : {}),
       targetCombatantId: targetId,
       advantage: mode === 'advantage',
       disadvantage: mode === 'disadvantage',
@@ -468,6 +475,7 @@ export function CombatActionPanel({
             ) : null}
             {tray && openStep !== 'attack' ? null : (
               <div className={tray ? 'attack-options tray-menu' : 'attack-options'}>
+                {multiattack?<p className="section-note" role="status">{multiattack.label}: {multiattack.performed}/{multiattack.total} golpes resolvidos. Escolha o ataque e o alvo deste golpe.</p>:null}
                 {availableAttacks.map((attack) => (
                   <AttackOption
                     key={attack.id}

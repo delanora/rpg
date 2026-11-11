@@ -38,6 +38,12 @@ export const turnEconomySchema = z.object({
   /** Ajuste administrativo em distância real; não é ampliado ao remover condições. */
   movementOverrideBudget: z.number().nonnegative().nullable().default(null),
   attackAction: attackActionSchema.nullable().default(null),
+  /** Ação própria de criatura, separada de Attack Action/Ataque Extra. */
+  multiattack: z.object({
+    id:z.string(),abilityId:z.string(),label:z.string(),
+    attacks:z.array(z.object({attackId:z.string(),name:z.string().default('Ataque'),remaining:z.number().int().nonnegative()})),
+    performed:z.number().int().nonnegative(),total:z.number().int().min(2).max(20),
+  }).nullable().default(null),
   /** Armas leves usadas em Attack Action: mão secundária exige OUTRA arma. */
   lightWeaponsAttacked: z.array(z.string()).default([]),
   ready: z.object({ trigger: z.string(), intent: z.string() }).nullable().default(null),
@@ -93,6 +99,7 @@ export function onTurnStart(speed: number): TurnEconomy {
 
 /** Não restaura economia ao encerrar; Ready vale até o próximo início próprio. */
 export function onTurnEnd(state: TurnEconomy): TurnEconomy {
+  state.multiattack = null;
   return state;
 }
 

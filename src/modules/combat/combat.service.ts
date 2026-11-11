@@ -1,3 +1,4 @@
+import { beginMultiattack, recordMultiattack } from '../shared/multiattack.js';
 import { beginCreatureAreaUse, publishCreatureAreaUse } from './creature-area.service.js';
 import { obstacleCoverProvider } from './spatial/obstacle-cover.js';
 import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
@@ -1665,6 +1666,8 @@ export async function resolveAttack<TReaction = never>(
       );
     }
     const longRangeDisadvantage = rangeInfo.status === 'long-range';
+    if (input.multiattackId && (options.forcedReaction || input.prepared || attacker.character || attack.id.startsWith('offhand:') || input.attackActionId))
+      throw new HttpError('Ataques Múltiplos não é Reação, ação preparada ou Attack Action.',400,'MULTIATTACK_INVALID_CONTEXT');
     if (options.forcedReaction) {
       // 6.6L.3.1 — ATAQUE DE OPORTUNIDADE: UMA Reação, UM ataque corpo a corpo.
       // Sem Ação/Ação Bônus, sem `recordAttack` (não é Attack Action, então
@@ -1678,7 +1681,9 @@ export async function resolveAttack<TReaction = never>(
       await appendEconomyLog(db, combat, attacker, 'Executou ataque preparado usando Reação; gatilho confirmado manualmente.', 'prepared-attack');
     } else {
       requireOwnTurn(combat, attacker);
-      if (attack.id.startsWith('offhand:')) {
+      if (input.multiattackId) {
+        recordMultiattack(economy,input.multiattackId,attack.id);
+      } else if (attack.id.startsWith('offhand:')) {
         if (input.attackActionId) throw new HttpError('Mão secundária não integra o contador da Attack Action.', 400);
         validateOffhand(attacker, attack.inventoryItemId, economy.lightWeaponsAttacked);
         spendEconomy(economy, 'bonus-action');
@@ -2905,6 +2910,16 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
     let areaUseId:string|undefined;
     const unit = actingCombatant(combat, actor, input.combatantId);
     if (!unit.creature || unit.character) throw new HttpError('Escolha uma criatura ou NPC do bestiário.', 400);
+    if(input.mode==='cancel-multiattack') {
+      const economy=economyOf(unit.turnEconomy);
+      if(!economy.multiattack || economy.multiattack.abilityId!==input.abilityId)
+        throw new HttpError('Não há Ataques Múltiplos correspondentes em andamento.',409,'MULTIATTACK_NOT_ACTIVE');
+      const label=economy.multiattack.label;
+      economy.multiattack=null;
+      await db.combatant.update({where:{id:unit.id},data:{turnEconomy:economy}});
+      await appendEconomyLog(db,combat,unit,`Encerrou ${label}; golpes restantes descartados, sem devolver a Ação.`,'multiattack-end',{private:unit.spatialVisibility==='master-only'});
+      return {combat:toCombatDto(await loadCombatById(combat.id,db),actor.role)};
+    }
     const ability = creatureAbilitiesOf(unit.creature.abilities).find(item => item.id === input.abilityId);
     if (!ability) throw new HttpError('Habilidade não encontrada no cadastro.', 404);
     if (ability.cost === 'passive') throw new HttpError('Característica passiva é apenas consultiva.', 400);
@@ -2930,8 +2945,9 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
         areaUseId=await beginCreatureAreaUse(db,combat,unit,ability,input.areaPlacement);
       }
       const economy = economyOf(unit.turnEconomy);
-      spendEconomy(economy, ability.cost);
-      if(ability.execution!=='area-save-damage')applyTacticalAction(economy, ability.execution, unit);
+      if(ability.execution==='multiattack')beginMultiattack(economy,ability,combatantAttacks(unit),randomUUID());
+      else spendEconomy(economy, ability.cost);
+      if(!['area-save-damage','multiattack'].includes(ability.execution))applyTacticalAction(economy, ability.execution, unit);
       if (ability.maxUses !== null) uses[ability.id] = (uses[ability.id] ?? 0) + 1;
       await db.combatant.update({ where: { id: unit.id }, data: { turnEconomy: economy, abilityUses: uses } });
       // Publica só o nome e a descrição do uso, sem custos, gatilho ou saldo.

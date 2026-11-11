@@ -20,9 +20,17 @@ export function CreatureAbilitiesPanel({
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const abilities = combatant.abilities ?? [];
+  const sequence=combatant.turnEconomy.multiattack;
+  const sequencePending=Boolean(sequence && sequence.performed<sequence.total);
   if (!combatant.creatureId) return null;
   return (
     <div className="combat-creature-abilities">
+      {sequence?<article aria-label="Progresso dos Ataques Múltiplos">
+        <strong>{sequence.label} · {sequence.performed}/{sequence.total}</strong>
+        <p>{sequencePending?'Resolva os golpes restantes no painel de ataques. Cada golpe escolhe seu alvo.':'Todos os golpes foram resolvidos.'}</p>
+        {sequence.attacks.filter(item=>item.remaining>0).map(item=><p key={item.attackId}>{item.name} · {item.remaining} restante(s)</p>)}
+        {sequencePending?<button type="button" className="btn btn-small" disabled={busy} onClick={()=>onRun(()=>useCreatureAbility(combat,{combatantId:combatant.id,abilityId:sequence.abilityId,mode:'cancel-multiattack'}))}>Abandonar golpes restantes</button>:null}
+      </article>:null}
       {!abilities.length ? (
         <p className="section-note">
           Nenhuma habilidade especial cadastrada no bestiário.
@@ -32,6 +40,7 @@ export function CreatureAbilitiesPanel({
         const used = combatant.abilityUses?.[ability.id] ?? 0;
         const economy = combatant.turnEconomy;
         const unavailable =
+          (ability.execution==='multiattack' && sequencePending) ||
           combatant.deathBlocksActions ||
           (combatant.hpCurrent ?? 0) <= 0 ||
           !combatant.conditionEffects.canAct ||
@@ -62,7 +71,7 @@ export function CreatureAbilitiesPanel({
                 ? 'Consulta: não aplica modificadores automaticamente.'
                 : ability.execution === 'assisted'
                   ? 'Assistida: o Mestre resolve os efeitos e testes.'
-                  : ability.execution==='area-save-damage'?'Área: selecione direção e confira os alvos no grid.': `Automática: ${ability.execution === 'dash' ? 'Disparada' : ability.execution === 'dodge' ? 'Esquivar' : 'Desengajar'}.`}
+                  : ability.execution==='multiattack'?'Ataques Múltiplos: uma Ação, golpes resolvidos individualmente.': ability.execution==='area-save-damage'?'Área: selecione direção e confira os alvos no grid.': `Automática: ${ability.execution === 'dash' ? 'Disparada' : ability.execution === 'dodge' ? 'Esquivar' : 'Desengajar'}.`}
             </small>
             {ability.cost !== 'passive' ? (
               <div className="combat-ability-buttons">
@@ -93,7 +102,7 @@ export function CreatureAbilitiesPanel({
                     ? 'Restaurar todos os usos desta habilidade para esta cópia?'
                     : ability.execution === 'assisted'
                       ? `Confirme a elegibilidade${ability.cost === 'reaction' ? ' e a ocorrência do gatilho' : ''}. O sistema gastará o recurso; resolva o efeito e os testes de forma assistida.`
-                      : 'Confirmar uso e consumo da economia indicada?'}
+                      : ability.execution==='multiattack'?'Iniciar os Ataques Múltiplos? Consome uma Ação; resolva cada golpe no painel de ataques.':'Confirmar uso e consumo da economia indicada?'}
                 </p>
                 <button
                   type="button"

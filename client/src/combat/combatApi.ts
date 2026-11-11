@@ -62,6 +62,7 @@ export function nextTurn(
 
 export function resolveAttack(combat: CombatDto, input: {
   attackActionId?: string;
+  multiattackId?: string;
   prepared?: boolean;
   attackId: string;
   targetCombatantId: string;
@@ -191,7 +192,7 @@ export function removeCombatParticipant(combat: CombatDto, combatantId: string):
  return api<{combat: CombatDto}>('/api/combat/participants/remove', {method:'POST', body:{...operationFor(combat),combatantId}}).then(r=>r.combat);
 }
 
-export function useCreatureAbility(combat: Pick<CombatDto,'id'|'version'>, input: { combatantId: string; abilityId: string; areaPlacement?:CreatureAreaPlacement; operationId?:string; mode?: 'use' | 'restore'; confirmed?: boolean }): Promise<CombatDto> {
+export function useCreatureAbility(combat: Pick<CombatDto,'id'|'version'>, input: { combatantId: string; abilityId: string; areaPlacement?:CreatureAreaPlacement; operationId?:string; mode?: 'use' | 'restore' | 'cancel-multiattack'; confirmed?: boolean }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/creature-ability', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }
 

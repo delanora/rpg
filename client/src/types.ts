@@ -2076,6 +2076,7 @@ export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';
 export type CombatantKind = 'CHARACTER' | 'CREATURE' | 'NPC';
 
 export interface TurnEconomy {
+  multiattack?: import('../../src/modules/shared/action-economy').TurnEconomy['multiattack'];
   actionsGranted: number;
   actionsUsed: number;
   bonusActionUsed: boolean;

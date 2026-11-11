@@ -47,6 +47,7 @@ export const combatOperationSchema = z.object({
 
 export const attackSchema = combatOperationSchema.extend({
   attackActionId: z.string().min(1).optional(),
+  multiattackId: z.string().min(1).max(100).optional(),
   prepared: z.boolean().optional(),
   targetCombatantId: z.string().min(1),
   attackId: z.string().min(1),
@@ -346,7 +347,7 @@ export const creatureAbilityUseSchema = combatOperationSchema.extend({
   combatantId: z.string().min(1),
   abilityId: z.string().min(1),
   areaPlacement: creatureAreaPlacementSchema.optional(),
-  mode: z.enum(['use', 'restore']).default('use'),
+  mode: z.enum(['use', 'restore', 'cancel-multiattack']).default('use'),
   confirmed: z.boolean().default(false),
 }).strict();
 

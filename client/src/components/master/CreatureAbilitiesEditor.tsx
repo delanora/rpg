@@ -12,8 +12,10 @@ export function CreatureAbilitiesEditor({
   abilities,
   onChange,
   onEditingChange,
+  attacks = [],
 }: {
   abilities: CreatureAbility[];
+  attacks?: {id:string;name:string}[];
   onChange: (value: CreatureAbility[]) => void;
   onEditingChange: (editing: boolean) => void;
 }) {
@@ -34,6 +36,9 @@ export function CreatureAbilitiesEditor({
     if (!parsed.success) {
       setError(parsed.error.issues[0].message);
       return;
+    }
+    if(parsed.data.execution==='multiattack' && parsed.data.multiattack?.some(item=>!attacks.some(attack=>attack.id===item.attackId))) {
+      setError('Selecione ataques existentes no cadastro da criatura.'); return;
     }
     onChange(
       abilities.some((item) => item.id === parsed.data.id)
@@ -136,6 +141,7 @@ export function CreatureAbilitiesEditor({
                 : `${item.maxUses} usos por combate`}
             </p>
             <p>{item.description}</p>
+            {item.execution==='multiattack'?<p>{item.multiattack?.map(entry=>`${entry.count}× ${attacks.find(attack=>attack.id===entry.attackId)?.name??'Ataque removido'}`).join(' · ')}</p>:null}
           </div>
           <button
             className="btn btn-small"
@@ -169,6 +175,7 @@ export function CreatureAbilitiesEditor({
                     ...draft,
                     cost: e.target.value as CreatureAbility['cost'],
                     execution: 'assisted',
+                    multiattack: undefined,
                     recharge: e.target.value === 'passive' ? undefined : draft.recharge,
                     maxUses:
                       e.target.value === 'passive' ? null : draft.maxUses,
@@ -193,6 +200,7 @@ export function CreatureAbilitiesEditor({
                     ...draft,
                     execution: e.target.value as CreatureAbility['execution'],
                     ...(e.target.value==='area-save-damage'?{area:draft.area??structuredClone(defaultCreatureArea)}:{}),
+                    ...(e.target.value==='multiattack'?{multiattack:draft.multiattack??(attacks[0]?[{attackId:attacks[0].id,count:2}]:[])}:{multiattack:undefined}),
                   })
                 }
               >
@@ -206,6 +214,7 @@ export function CreatureAbilitiesEditor({
                 <option value="disengage">Desengajar</option>
                 <option value="dash">Disparada</option>
                 <option value="dodge">Esquivar</option>
+                {draft.cost==='action'?<option value="multiattack">Ataques Múltiplos</option>:null}
                 <option value="area-save-damage">Área com salvaguarda e dano</option>
                 </> : null}
               </select>
@@ -243,6 +252,23 @@ export function CreatureAbilitiesEditor({
             </label>
           ) : null}
           </div>
+          {draft.execution==='multiattack'?<div className="creature-attacks">
+            <h4>Composição dos Ataques Múltiplos</h4>
+            <p>Escolha os ataques e quantidades. No combate, cada golpe pode mirar um alvo diferente, em qualquer ordem.</p>
+            {!attacks.length?<p className="section-note">Cadastre os ataques da criatura antes de montar esta habilidade.</p>:null}
+            {(draft.multiattack??[]).map((entry,index)=><div className="creature-form-grid" key={index}>
+              <label>Ataque<select aria-label={`Ataque múltiplo ${index+1}`} value={entry.attackId}
+                onChange={e=>setDraft({...draft,multiattack:draft.multiattack!.map((item,i)=>i===index?{...item,attackId:e.target.value}:item)})}>
+                {!attacks.some(a=>a.id===entry.attackId)?<option value={entry.attackId}>Ataque removido — selecione outro</option>:null}
+                {attacks.map(attack=><option value={attack.id} key={attack.id}>{attack.name}</option>)}
+              </select></label>
+              <label>Quantidade<input aria-label={`Quantidade do ataque ${index+1}`} type="number" min={1} max={20} value={entry.count}
+                onChange={e=>setDraft({...draft,multiattack:draft.multiattack!.map((item,i)=>i===index?{...item,count:Number(e.target.value)}:item)})}/></label>
+              <button type="button" className="btn btn-small" onClick={()=>setDraft({...draft,multiattack:draft.multiattack!.filter((_,i)=>i!==index)})}>Remover ataque da composição</button>
+            </div>)}
+            <button type="button" className="btn btn-small" disabled={!attacks.some(a=>!draft.multiattack?.some(item=>item.attackId===a.id))}
+              onClick={()=>{const next=attacks.find(a=>!draft.multiattack?.some(item=>item.attackId===a.id));if(next)setDraft({...draft,multiattack:[...(draft.multiattack??[]),{attackId:next.id,count:1}]});}}>Adicionar tipo de ataque</button>
+          </div>:null}
           {draft.execution==='area-save-damage'?<CreatureAreaFields value={draft.area??defaultCreatureArea} onChange={area=>setDraft({...draft,area})}/>:null}
           {draft.cost === 'reaction' ? (
             <label>

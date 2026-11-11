@@ -747,7 +747,7 @@ export function CreatureEditor({
         ) : null}
 
         {step === 2 ? <Section title="Habilidades especiais" icon="sparkle">
-          <CreatureAbilitiesEditor abilities={creature.abilities ?? []} onChange={abilities => onPatch({ abilities })} onEditingChange={setAbilityEditing} />
+          <CreatureAbilitiesEditor attacks={creature.attacks ?? []} abilities={creature.abilities ?? []} onChange={abilities => onPatch({ abilities })} onEditingChange={setAbilityEditing} />
         </Section> : null}
 
         {step === 4 && !creating && creature.kind === 'NPC' ? (

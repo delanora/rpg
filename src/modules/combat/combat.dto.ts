@@ -613,7 +613,7 @@ export function hideCombatantMechanicalState(combatant: CombatantDto): Combatant
     armorClass: null,
     // Esquiva/Preparar de NPC/criatura são estado operacional do Mestre: o
     // jogador não recebe os flags (sem badge e sem inferir a tática secreta).
-    turnEconomy: { ...combatant.turnEconomy, dodging: false, ready: null },
+    turnEconomy: { ...combatant.turnEconomy, multiattack: null, dodging: false, ready: null },
     // Death Saves de NPC/criatura são PRIVADOS do Mestre: o servidor não envia
     // contador, resultado nem a existência da rolagem.
     deathState: null,
