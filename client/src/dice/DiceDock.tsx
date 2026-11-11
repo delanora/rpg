@@ -1,3 +1,4 @@
+import { DeathSaveRoll } from './DeathSaveRoll';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
@@ -198,7 +199,9 @@ export function DiceDock({ roller }: DiceDockProps) {
                 <div className={rolling ? 'dice-ring is-rolling' : 'dice-ring'}>
                   <div className="dice-ring-inner">
                     <div className="dice-ring-floor">
-                      {settled && result ? (
+                      {deathSave ? (
+                        <DeathSaveRoll value={result?.dice[0]?.value ?? null} rolling={rolling} settled={settled} />
+                      ) : settled && result ? (
                         result.dice.map((die, index) => (
                           <Die3D
                             appearance={deathSave ? 'death-save' : undefined}

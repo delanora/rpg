@@ -326,3 +326,99 @@
   user-select: none;
   -webkit-user-drag: none;
 }
+
+/* Arremesso dentro do disco: o aro não se move, nem é atravessado pelo dado.
+   A distância em cqw acompanha o diâmetro interno em desktop e celular. */
+.death-save-roll {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  container-type: inline-size;
+  pointer-events: none;
+}
+.death-save-flight,
+.death-save-shadow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+.death-save-flight .ddie {
+  --ddie-scale: 0.58;
+  --ddie-box: 7.4rem;
+  translate: -50% -50%;
+  animation: none;
+  transition: none;
+}
+.death-save-flight .ddie-orient {
+  transition: transform 360ms cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+.death-save-roll.is-tumbling .ddie-spin {
+  animation: ds-roll-spin var(--death-roll-duration) linear both;
+}
+.death-save-roll.is-tumbling .ddie-badge {
+  display: none;
+}
+.death-save-shadow {
+  width: 30cqw;
+  height: 11cqw;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, .85), rgba(0, 0, 0, .35) 45%, transparent 72%);
+  transform: translate(-50%, calc(-50% + 12cqw));
+  opacity: .7;
+}
+.death-save-roll.is-tumbling .death-save-flight {
+  animation: ds-roll-flight var(--death-roll-duration) linear both;
+}
+.death-save-roll.is-tumbling .death-save-shadow {
+  animation: ds-roll-shadow var(--death-roll-duration) linear both;
+}
+@keyframes ds-roll-flight {
+  0% { transform: translate(-19cqw, 8cqw) scale(.86); }
+  12% { transform: translate(-5cqw, -22cqw) scale(1.12); }
+  28% { transform: translate(20cqw, -9cqw) scale(1.04); }
+  38% { transform: translate(21cqw, 10cqw) scale(.94); }
+  52% { transform: translate(-17cqw, 12cqw) scale(1.03); }
+  66% { transform: translate(-10cqw, -12cqw) scale(.97); }
+  78% { transform: translate(8cqw, 4cqw) scale(1.01); }
+  88% { transform: translate(-3cqw, 1cqw) scale(.99); }
+  96% { transform: translate(1cqw, -.5cqw) scale(1); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes ds-roll-spin {
+  0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+  28% { transform: rotateX(660deg) rotateY(-490deg) rotateZ(310deg); }
+  52% { transform: rotateX(1060deg) rotateY(-780deg) rotateZ(560deg); }
+  78% { transform: rotateX(1370deg) rotateY(-1020deg) rotateZ(690deg); }
+  92% { transform: rotateX(1430deg) rotateY(-1072deg) rotateZ(718deg); }
+  100% { transform: rotateX(1440deg) rotateY(-1080deg) rotateZ(720deg); }
+}
+@keyframes ds-roll-shadow {
+  0% { transform: translate(calc(-50% - 19cqw), calc(-50% + 12cqw)) scale(.8); opacity: .6; }
+  12% { transform: translate(calc(-50% - 5cqw), calc(-50% + 2cqw)) scale(.65); opacity: .25; }
+  28% { transform: translate(calc(-50% + 20cqw), calc(-50% + 4cqw)) scale(.8); opacity: .4; }
+  38% { transform: translate(calc(-50% + 21cqw), calc(-50% + 15cqw)) scale(1); opacity: .8; }
+  52% { transform: translate(calc(-50% - 17cqw), calc(-50% + 14cqw)) scale(.8); opacity: .45; }
+  66% { transform: translate(calc(-50% - 10cqw), calc(-50% + 3cqw)) scale(.8); opacity: .45; }
+  78% { transform: translate(calc(-50% + 8cqw), calc(-50% + 13cqw)) scale(1); opacity: .7; }
+  88% { transform: translate(calc(-50% - 3cqw), calc(-50% + 12cqw)); opacity: .65; }
+  96% { transform: translate(calc(-50% + 1cqw), calc(-50% + 12cqw)); opacity: .7; }
+  100% { transform: translate(-50%, calc(-50% + 12cqw)); opacity: .7; }
+}
+@container (max-width: 250px) {
+  .death-save-flight .ddie { --ddie-scale: .44; --ddie-box: 6rem; }
+}
+@container (max-width: 200px) {
+  .death-save-flight .ddie { --ddie-scale: .35; --ddie-box: 5rem; }
+}
+@container (max-width: 160px) {
+  .death-save-flight .ddie { --ddie-scale: .27; --ddie-box: 4rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .death-save-roll.is-tumbling .death-save-flight,
+  .death-save-roll.is-tumbling .death-save-shadow,
+  .death-save-roll.is-tumbling .ddie-spin {
+    animation: none;
+  }
+  .death-save-flight .ddie-orient { transition: none; }
+}

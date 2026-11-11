@@ -24,8 +24,8 @@ interface Die3DProps {
   title?: string;
   /**
    * `death-save` troca a pintura das faces pelas artes do Teste contra a Morte
-   * (obsidiana, símbolo esculpido e borda de latão). A geometria, o giro e o
-   * pouso são os mesmos de sempre.
+   * (obsidiana, símbolo esculpido e borda de latão). A geometria e o valor continuam os mesmos;
+   * a bandeja de morte tem movimento próprio e alinhamento suave da face.
    */
   appearance?: 'death-save';
 }
@@ -49,7 +49,9 @@ export function Die3D({
 }: Die3DProps) {
   const faces = useMemo(() => dieFaces(sides), [sides]);
   const paints = paintsValues(sides);
-  const settle = reveal && value !== null ? settleTransform(sides, value) : null;
+  const settle = value !== null && (reveal || (appearance === 'death-save' && tumbling))
+    ? settleTransform(sides, value)
+    : null;
   const temaMorte = appearance === 'death-save';
 
   const className = [

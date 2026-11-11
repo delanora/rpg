@@ -1,3 +1,4 @@
+import { rollAnimationMs } from './rollAnimation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playCrit, playDice } from '../sound';
 import type {
@@ -73,7 +74,7 @@ export interface DiceToast {
 let toastSequence = 0;
 
 /** Duração da animação de queda dos dados, em milissegundos. */
-const TUMBLE_MS = 1150;
+const TUMBLE_MS = rollAnimationMs();
 
 /** Os avisos públicos somem sozinhos depois de 3 segundos. */
 const TOAST_MS = 3000;
@@ -211,8 +212,9 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
     (payload: TableRollActivePayload) => {
       const parsed = Date.parse(payload.at);
       // Data ausente ou inválida: trata como queda já terminada.
-      const elapsed = Number.isFinite(parsed) ? Date.now() - parsed : TUMBLE_MS;
-      const remaining = Math.max(0, TUMBLE_MS - elapsed);
+      const duration = rollAnimationMs(payload.kind);
+      const elapsed = Number.isFinite(parsed) ? Date.now() - parsed : duration;
+      const remaining = Math.max(0, duration - elapsed);
       const tumbling = payload.board.phase === 'tumbling';
 
       if (remoteSettleTimer.current !== null) {
@@ -511,7 +513,7 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
       if (roll.crit) playCrit();
 
       if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
-      settleTimer.current = window.setTimeout(() => setPhase('settled'), TUMBLE_MS);
+      settleTimer.current = window.setTimeout(() => setPhase('settled'), rollAnimationMs(context?.kind));
     } catch (err) {
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Falha ao rolar os dados.');
@@ -608,7 +610,7 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
         // do servidor). Então a queda de quem assiste conta a partir daqui, e
         // não do anúncio de "rolando" — que sai meio round-trip mais cedo e
         // fazia os dados pousarem antes dos de quem rolou.
-        if (roll.actorUserId === remoteUserId.current) settleRemote();
+        if (roll.actorUserId === remoteUserId.current) settleRemote(rollAnimationMs(roll.kind));
 
         // A própria rolagem já aparece na janela: não vira aviso para o autor.
         if (roll.clientId && roll.clientId === myClientId.current) return;
@@ -617,8 +619,9 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
         // isso o resultado apareceria na mesa antes de aparecer para quem rolou.
         const tumbleAt = remoteTumbleAt.current;
         remoteTumbleAt.current = null;
-        const remaining = tumbleAt === null ? TUMBLE_MS : Date.now() - tumbleAt;
-        const delay = Math.max(0, TUMBLE_MS - remaining);
+        const duration = rollAnimationMs(roll.kind);
+        const remaining = tumbleAt === null ? duration : Date.now() - tumbleAt;
+        const delay = Math.max(0, duration - remaining);
 
         toastSequence += 1;
         const id = `dice-toast-${toastSequence}`;
