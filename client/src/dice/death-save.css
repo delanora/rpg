@@ -327,6 +327,8 @@
   -webkit-user-drag: none;
 }
 
+/* A especificidade desta animação vence a rolagem genérica mesmo quando
+   styles.css vem depois no bundle. Giro e trajetória usam o mesmo relógio. */
 /* Arremesso dentro do disco: o aro não se move, nem é atravessado pelo dado.
    A distância em cqw acompanha o diâmetro interno em desktop e celular. */
 .death-save-roll {
@@ -343,7 +345,7 @@
   left: 50%;
   top: 50%;
 }
-.death-save-flight .ddie {
+.death-save-roll .death-save-flight .ddie {
   --ddie-scale: 0.58;
   --ddie-box: 7.4rem;
   translate: -50% -50%;
@@ -353,7 +355,7 @@
 .death-save-flight .ddie-orient {
   transition: transform 360ms cubic-bezier(0.2, 0.7, 0.25, 1);
 }
-.death-save-roll.is-tumbling .ddie-spin {
+.dice-stage.is-death-save .death-save-roll.is-tumbling .ddie-spin {
   animation: ds-roll-spin var(--death-roll-duration) linear both;
 }
 .death-save-roll.is-tumbling .ddie-badge {
@@ -406,18 +408,18 @@
   100% { transform: translate(-50%, calc(-50% + 12cqw)); opacity: .7; }
 }
 @container (max-width: 250px) {
-  .death-save-flight .ddie { --ddie-scale: .44; --ddie-box: 6rem; }
+  .death-save-roll .death-save-flight .ddie { --ddie-scale: .44; --ddie-box: 6rem; }
 }
 @container (max-width: 200px) {
-  .death-save-flight .ddie { --ddie-scale: .35; --ddie-box: 5rem; }
+  .death-save-roll .death-save-flight .ddie { --ddie-scale: .35; --ddie-box: 5rem; }
 }
 @container (max-width: 160px) {
-  .death-save-flight .ddie { --ddie-scale: .27; --ddie-box: 4rem; }
+  .death-save-roll .death-save-flight .ddie { --ddie-scale: .27; --ddie-box: 4rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .death-save-roll.is-tumbling .death-save-flight,
   .death-save-roll.is-tumbling .death-save-shadow,
-  .death-save-roll.is-tumbling .ddie-spin {
+  .dice-stage.is-death-save .death-save-roll.is-tumbling .ddie-spin {
     animation: none;
   }
   .death-save-flight .ddie-orient { transition: none; }
