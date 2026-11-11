@@ -1333,6 +1333,33 @@ export function CombatTracker({
     </>
   );
 
+  // A coluna reserva o espaço dos testes; o centro mantém somente a Reação.
+  const testsContent = hasAssumedPendings || (concentrationEntity && concentrationSaves.length > 0) ? <>
+            {hasAssumedPendings && assumedCharacter ? <AssumedCharacterPendings character={assumedCharacter}
+              cards={assumedRequests} busy={busy || Boolean(resolutionBusyId)}
+              onRollDeath={card => void rollDeathSaveCard(card)}
+              onRollSpell={(card, selected, visibility) => void rollSpellSave(card, selected, visibility)}
+              onDecline={card => void declineResolution(card)}
+              onRollConcentration={save => void rollConcentrationForMaster(save, 'public')} /> : null}
+            {!assumedCharacter && concentrationEntity && concentrationSaves.length > 0 ? (
+              <ConcentrationSavePanel
+                name={pendingCombatant?.name ?? ''}
+                saves={concentrationSaves}
+                isMaster={isMaster}
+                canRoll={canRollOwnConcentration}
+                busy={busy}
+                onRollPlayer={
+                  onRollConcentrationSave
+                    ? (save) => onRollConcentrationSave(concentrationEntity, save)
+                    : undefined
+                }
+                onRollMaster={(save, visibility) =>
+                  void rollConcentrationForMaster(save, visibility)
+                }
+              />
+            ) : null}
+  </> : null;
+
   // --- Aguardando iniciativas ------------------------------------------------
   /**
    * PRÉ-INICIATIVA (6.6M.7) — a MESMA dock, a MESMA geometria.
@@ -1452,6 +1479,7 @@ export function CombatTracker({
               log={log}
               economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
               requests={logRequests}
+              testsContent={testsContent}
               resolutionBusyId={resolutionBusyId}
               onRollSpellSave={(card, selected, visibility) =>
                 void rollSpellSave(card, selected, visibility)
@@ -1638,35 +1666,8 @@ export function CombatTracker({
           />
         }
         context={
-          hasAssumedPendings || (concentrationEntity && concentrationSaves.length > 0) || reactionOpportunity ? (
+          reactionOpportunity ? (
             <>
-
-            {/* CONCENTRAÇÃO (PHB 2014): dano em quem está concentrando abre este
-                teste. O jogador rola pela bandeja; o Mestre escolhe público ×
-                privado por teste de criatura/NPC. */}
-            {hasAssumedPendings && assumedCharacter ? <AssumedCharacterPendings character={assumedCharacter}
-              cards={assumedRequests} busy={busy || Boolean(resolutionBusyId)}
-              onRollDeath={card => void rollDeathSaveCard(card)}
-              onRollSpell={(card, selected, visibility) => void rollSpellSave(card, selected, visibility)}
-              onDecline={card => void declineResolution(card)}
-              onRollConcentration={save => void rollConcentrationForMaster(save, 'public')} /> : null}
-            {!assumedCharacter && concentrationEntity && concentrationSaves.length > 0 ? (
-              <ConcentrationSavePanel
-                name={pendingCombatant?.name ?? ''}
-                saves={concentrationSaves}
-                isMaster={isMaster}
-                canRoll={canRollOwnConcentration}
-                busy={busy}
-                onRollPlayer={
-                  onRollConcentrationSave
-                    ? (save) => onRollConcentrationSave(concentrationEntity, save)
-                    : undefined
-                }
-                onRollMaster={(save, visibility) =>
-                  void rollConcentrationForMaster(save, visibility)
-                }
-              />
-            ) : null}
 
             {/* Janela de Reação: SÓ com oportunidade concreta para este usuário. */}
             {reactionOpportunity ? (
@@ -1818,6 +1819,7 @@ export function CombatTracker({
             log={log}
             economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
             requests={logRequests}
+              testsContent={testsContent}
             resolutionBusyId={resolutionBusyId}
             onRollSpellSave={(card, selected, visibility) =>
               void rollSpellSave(card, selected, visibility)

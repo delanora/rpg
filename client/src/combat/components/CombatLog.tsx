@@ -1,19 +1,31 @@
+import type { ReactNode } from 'react';
 import { Icon, type IconName } from '../../components/Icon';
 import { formatModifier } from '../../dnd';
-import type { CombatResolutionCardDto, DamageBreakdownPayload } from '../../types';
+import type {
+  CombatResolutionCardDto,
+  DamageBreakdownPayload,
+} from '../../types';
 import type { CombatLogEntry } from '../useCombatState';
 import { DamageComponent } from './DamageComponent';
 import { ResolutionCard } from './ResolutionCard';
 
 interface CombatLogProps {
   log: CombatLogEntry[];
-  economyLog?: { id: string; actorName: string; message: string; at: string; action?: string }[];
+  economyLog?: {
+    id: string;
+    actorName: string;
+    message: string;
+    at: string;
+    action?: string;
+  }[];
   /**
    * 6.6I — SOLICITAÇÕES ATIVAS (cards interativos). Vêm do read-model do
-   * servidor, acima do histórico: decisão pendente não pode se perder entre
+   * servidor, no bloco Testes: decisão pendente não pode se perder entre
    * linhas antigas do registro.
    */
   requests?: CombatResolutionCardDto[];
+  /** Concentração e contexto assumido usam os mesmos controles existentes. */
+  testsContent?: ReactNode;
   resolutionBusyId?: string | null;
   onRollSpellSave?: (
     card: CombatResolutionCardDto,
@@ -30,12 +42,15 @@ interface CombatLogProps {
  * continuam no cartão genérico de "Ação de combate".
  */
 function actionHead(action?: string): { icon: IconName; title: string } | null {
-  if (action === 'death-save') return { icon: 'heart', title: 'Teste contra a Morte' };
+  if (action === 'death-save')
+    return { icon: 'heart', title: 'Teste contra a Morte' };
   if (action === 'stabilize') return { icon: 'flask', title: 'Estabilização' };
-  if (action === 'death-override') return { icon: 'crown', title: 'Decisão do Mestre' };
+  if (action === 'death-override')
+    return { icon: 'crown', title: 'Decisão do Mestre' };
   // 6.6I: o resultado da salvaguarda resolvida continua no MESMO registro, no
   // lugar do card que estava pendente (com o breakdown do servidor).
-  if (action === 'spell-save') return { icon: 'sparkle', title: 'Salvaguarda de magia' };
+  if (action === 'spell-save')
+    return { icon: 'sparkle', title: 'Salvaguarda de magia' };
   return null;
 }
 
@@ -91,7 +106,12 @@ function describeEntry(entry: CombatLogEntry): EntryView {
     };
   }
 
-  const title = entry.kind === 'initiative' ? 'Iniciativa' : entry.kind === 'attack' ? 'Ataque' : 'Dano';
+  const title =
+    entry.kind === 'initiative'
+      ? 'Iniciativa'
+      : entry.kind === 'attack'
+        ? 'Ataque'
+        : 'Dano';
   const modifierLabel =
     entry.modifier && entry.modifier !== 0
       ? ` ${entry.modifier > 0 ? `+${entry.modifier}` : entry.modifier}`
@@ -150,13 +170,24 @@ function outcomeOf(entry: CombatLogEntry): { key: string; label: string } {
  * de ataque (d20, modo, bônus, CA) e as observações do servidor. Tudo vem do
  * payload — nada é recalculado.
  */
-function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean }) {
+function AttackCard({
+  entry,
+  recent,
+}: {
+  entry: CombatLogEntry;
+  recent: boolean;
+}) {
   const outcome = outcomeOf(entry);
-  const ca = entry.targetArmorClass === null ? 'CA oculta' : `CA ${entry.targetArmorClass}`;
+  const ca =
+    entry.targetArmorClass === null
+      ? 'CA oculta'
+      : `CA ${entry.targetArmorClass}`;
   const components = entry.components ?? [];
   const rolls = entry.attackRolls ?? [];
   const rollLabel =
-    rolls.length > 0 ? rolls.map((roll) => `[${roll}]`).join(' ') : `[${entry.attackRoll ?? '—'}]`;
+    rolls.length > 0
+      ? rolls.map((roll) => `[${roll}]`).join(' ')
+      : `[${entry.attackRoll ?? '—'}]`;
 
   return (
     <li className={`log-card result ${outcome.key}${recent ? ' recent' : ''}`}>
@@ -166,19 +197,25 @@ function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean 
             <Icon name="sword" size={14} />
             <span>{entry.actorName}</span>
           </span>
-          <span className="attack-card-time">{new Date(entry.at).toLocaleTimeString('pt-BR')}</span>
+          <span className="attack-card-time">
+            {new Date(entry.at).toLocaleTimeString('pt-BR')}
+          </span>
         </header>
 
         <p className="attack-card-weapon">
           {entry.attackName ?? 'Ataque'}
-          {entry.targetName ? <span className="attack-card-target"> → {entry.targetName}</span> : null}
+          {entry.targetName ? (
+            <span className="attack-card-target"> → {entry.targetName}</span>
+          ) : null}
         </p>
 
         <p className={`attack-card-outcome ${outcome.key}`}>
           <span className="attack-card-vs">
             {entry.attackTotal} vs {ca}
           </span>
-          <span className={`attack-result-outcome ${outcome.key}`}>{outcome.label}</span>
+          <span className={`attack-result-outcome ${outcome.key}`}>
+            {outcome.label}
+          </span>
         </p>
 
         {entry.hit ? (
@@ -188,12 +225,17 @@ function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean 
               <>
                 <div className="attack-card-components">
                   {components.map((component, index) => (
-                    <DamageComponent key={`${component.type}-${index}`} component={component} />
+                    <DamageComponent
+                      key={`${component.type}-${index}`}
+                      component={component}
+                    />
                   ))}
                 </div>
                 <p className="attack-card-total">
                   <span className="attack-card-total-label">TOTAL</span>
-                  <span className="attack-card-total-value">{entry.damageRolled}</span>
+                  <span className="attack-card-total-value">
+                    {entry.damageRolled}
+                  </span>
                 </p>
               </>
             ) : (
@@ -220,25 +262,37 @@ function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean 
             <p className="log-detail-row">
               <span className="log-detail-label">Modo</span>
               <span className="log-detail-value">
-                {entry.advantage ? 'vantagem' : entry.disadvantage ? 'desvantagem' : 'normal'}
+                {entry.advantage
+                  ? 'vantagem'
+                  : entry.disadvantage
+                    ? 'desvantagem'
+                    : 'normal'}
               </span>
             </p>
             <p className="log-detail-row">
               <span className="log-detail-label">Bônus</span>
-              <span className="log-detail-value">{formatModifier(entry.attackBonus ?? 0)}</span>
+              <span className="log-detail-value">
+                {formatModifier(entry.attackBonus ?? 0)}
+              </span>
             </p>
             <p className="log-detail-row">
               <span className="log-detail-label">Total</span>
-              <span className="log-detail-value">{entry.attackTotal ?? '—'}</span>
+              <span className="log-detail-value">
+                {entry.attackTotal ?? '—'}
+              </span>
             </p>
             <p className="log-detail-row">
               <span className="log-detail-label">Alvo</span>
-              <span className="log-detail-value">{entry.targetName ?? '—'}</span>
+              <span className="log-detail-value">
+                {entry.targetName ?? '—'}
+              </span>
             </p>
             <p className="log-detail-row">
               <span className="log-detail-label">CA</span>
               <span className="log-detail-value">
-                {entry.targetArmorClass === null ? 'oculta' : String(entry.targetArmorClass ?? '—')}
+                {entry.targetArmorClass === null
+                  ? 'oculta'
+                  : String(entry.targetArmorClass ?? '—')}
               </span>
             </p>
             {entry.sneakAttack ? (
@@ -272,6 +326,7 @@ export function CombatLog({
   log,
   economyLog = [],
   requests = [],
+  testsContent = null,
   resolutionBusyId = null,
   onRollSpellSave = () => undefined,
   onDeclineSpellSave = () => undefined,
@@ -281,15 +336,83 @@ export function CombatLog({
     ...log,
     ...economyLog.map((entry) => ({ ...entry, kind: 'feature' as const })),
   ]
-    .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100);
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 100);
   return (
-    <section className="combat-block combat-log-panel">
-      <h3>
-        <Icon name="scroll" size={15} /> Registro
-      </h3>
+    <div className="combat-log-and-tests">
+      <section className="combat-block combat-log-panel" aria-label="Registro">
+        <h3>
+          <Icon name="scroll" size={15} /> Registro
+        </h3>
 
-      {requests.length > 0 ? (
+        {entries.length === 0 ? (
+          <p className="empty-hint">Sem eventos ainda.</p>
+        ) : (
+          <ol className="combat-log">
+            {entries.map((entry, index) => {
+              const recent = index === 0;
+              if (entry.kind === 'result') {
+                return (
+                  <AttackCard key={entry.id} entry={entry} recent={recent} />
+                );
+              }
+              const view = describeEntry(entry);
+              const details = detailRows(entry);
+              return (
+                <li
+                  key={entry.id}
+                  className={`log-card ${view.variant}${recent ? ' recent' : ''}`}
+                >
+                  <details className="log-card-body">
+                    <summary className="log-card-summary">
+                      <span className="log-card-head">
+                        <span className="log-card-icon">
+                          <Icon name={view.icon} size={14} />
+                        </span>
+                        <span className="log-card-actor">
+                          {entry.actorName}
+                        </span>
+                        <span className="log-card-time">
+                          {new Date(entry.at).toLocaleTimeString('pt-BR')}
+                        </span>
+                      </span>
+                      <span className="log-card-title">{view.title}</span>
+                      <span className="log-card-primary">{view.primary}</span>
+                      {view.secondary ? (
+                        <span className="log-card-secondary">
+                          {view.secondary}
+                        </span>
+                      ) : null}
+                    </summary>
+
+                    {details.length > 0 ? (
+                      <div className="log-card-detail">
+                        {details.map((row) => (
+                          <p key={row.label} className="log-detail-row">
+                            <span className="log-detail-label">
+                              {row.label}
+                            </span>
+                            <span className="log-detail-value">
+                              {row.value}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
+                  </details>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+      <section className="combat-block combat-tests-panel" aria-label="Testes">
+        <h3>
+          <Icon name="die" size={15} /> Testes
+        </h3>
+
         <div className="combat-resolution-list" aria-label="Decisões pendentes">
+          {testsContent}
           {requests.map((card) => (
             <ResolutionCard
               key={card.id}
@@ -301,55 +424,11 @@ export function CombatLog({
             />
           ))}
         </div>
-      ) : null}
 
-      {entries.length === 0 && requests.length === 0 ? (
-        <p className="empty-hint">Sem eventos ainda.</p>
-      ) : entries.length === 0 ? null : (
-        <ol className="combat-log">
-          {entries.map((entry, index) => {
-            const recent = index === 0;
-            if (entry.kind === 'result') {
-              return <AttackCard key={entry.id} entry={entry} recent={recent} />;
-            }
-            const view = describeEntry(entry);
-            const details = detailRows(entry);
-            return (
-              <li key={entry.id} className={`log-card ${view.variant}${recent ? ' recent' : ''}`}>
-                <details className="log-card-body">
-                  <summary className="log-card-summary">
-                    <span className="log-card-head">
-                      <span className="log-card-icon">
-                        <Icon name={view.icon} size={14} />
-                      </span>
-                      <span className="log-card-actor">{entry.actorName}</span>
-                      <span className="log-card-time">
-                        {new Date(entry.at).toLocaleTimeString('pt-BR')}
-                      </span>
-                    </span>
-                    <span className="log-card-title">{view.title}</span>
-                    <span className="log-card-primary">{view.primary}</span>
-                    {view.secondary ? (
-                      <span className="log-card-secondary">{view.secondary}</span>
-                    ) : null}
-                  </summary>
-
-                  {details.length > 0 ? (
-                    <div className="log-card-detail">
-                      {details.map((row) => (
-                        <p key={row.label} className="log-detail-row">
-                          <span className="log-detail-label">{row.label}</span>
-                          <span className="log-detail-value">{row.value}</span>
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
-                </details>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </section>
+        {requests.length === 0 && !testsContent ? (
+          <p className="empty-hint">Nenhum teste pendente.</p>
+        ) : null}
+      </section>
+    </div>
   );
 }

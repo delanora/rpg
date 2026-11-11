@@ -6199,7 +6199,7 @@ check(
   const logPanelSource = source('src/combat/components/CombatLog.tsx');
 
   check(
-    'SC60) registro rola DENTRO da própria coluna e os Resolution Cards ficam no topo, sempre acessíveis',
+    'SC60) registro e testes têm blocos separados, com rolagem própria e reserva estável',
     workspaceRule('.combat-workspace-log .combat-log').includes('overflow-y: auto;') &&
       workspaceRule('.combat-workspace-log .combat-log').includes('max-height: none;') &&
       // Os eventos PREENCHEM a coluna: a linha da grade divide a altura e o
@@ -6209,9 +6209,10 @@ check(
       ) &&
       workspaceRule('.combat-workspace-log .log-card-summary').includes('flex: 1 1 auto;') &&
       workspaceRule('.combat-workspace-log .combat-log > li').includes('display: flex;') &&
-      workspaceRule('.combat-workspace-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
-      logPanelSource.indexOf('className="combat-resolution-list"') <
-        logPanelSource.indexOf('<ol className="combat-log">'),
+      workspaceRule('.combat-tests-panel .combat-resolution-list').includes('overflow-y: auto;') &&
+      workspaceRule('.combat-log-and-tests').includes('grid-template-rows: minmax(0, 1fr) 17rem;') &&
+      logPanelSource.indexOf('<ol className="combat-log">') <
+        logPanelSource.indexOf('className="combat-block combat-tests-panel"'),
   );
 
   const actionPanelSource = source('src/combat/components/CombatActionPanel.tsx');
@@ -6289,11 +6290,11 @@ check(
   );
 
   check(
-    'SC66) registro mais denso sem perder os Resolution Cards no topo e sem tocar em outros pontos da ficha',
+    'SC66) registro denso e testes com rolagem independente, sem tocar em outros pontos da ficha',
     workspaceRule('.combat-workspace-log .combat-log').includes('gap: 0.28rem;') &&
       workspaceRule('.combat-workspace-log .log-card-summary').includes('padding: 0.34rem 0.5rem;') &&
       workspaceRule('.combat-workspace-log .log-entry').includes('padding: 0.34rem 0.5rem;') &&
-      workspaceRule('.combat-workspace-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
+      workspaceRule('.combat-tests-panel .combat-resolution-list').includes('overflow-y: auto;') &&
       // Densidade é escopada ao registro (attack-card existe no painel também).
       workspaceActive.includes('.combat-workspace-log .log-card-summary {') &&
       !workspaceActive.includes('\n.log-card-summary {'),

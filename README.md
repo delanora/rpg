@@ -75,6 +75,8 @@ No combate, o Mestre acessa as habilidades pelas **Ações do turno** ou pelo bo
 
 Contrato: `POST /api/combat/creature-ability` (Mestre), com `combatId`, `combatantId`, `abilityId`, `expectedVersion`, `operationId`, `mode: use|restore` e confirmação para execuções assistidas. O custo e a execução vêm do cadastro, nunca do pedido. Ataques Múltiplos, recarga automática, descanso automático e ações lendárias seguem em etapas posteriores.
 
+Na coluna lateral do combate, **Registro** mostra o histórico e **Testes** reúne as solicitações pendentes de morte, magias, habilidades e concentração. O bloco inferior mantém espaço para um teste contra a morte mesmo quando vazio; várias solicitações usam rolagem própria, sem deslocar o histórico. As pendências do personagem assumido pelo Mestre usam essa mesma região. Resultados resolvidos continuam no Registro.
+
 ### Habilidades em área com salvaguarda e dano
 
 No bestiário, escolha **Área com salvaguarda e dano** e cadastre forma, dimensões, atributo, CD, dano e resultado no sucesso (metade ou nenhum). Cone, linha, esfera, cubo e cilindro usam a mesma seleção do grid. No turno da criatura, **Preparar área** permite posicionar e conferir os atingidos; **Usar** consome a economia e os usos uma única vez. Recarga continua manual pelo controle de usos.

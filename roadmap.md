@@ -20,7 +20,7 @@
 ## 2. Estado atual em poucas linhas
 
 - **Núcleo jogável:** ficha, inventário, recursos/descansos, iniciativa, Action Economy, ataques, movimento, grid, cobertura parcial, condições, concentração, morte e realtime já têm fundações operacionais.
-- **UI de combate:** workspace com grid central, iniciativa, registro e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
+- **UI de combate:** workspace com grid central, iniciativa, Registro e Testes em blocos separados e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
 - **6.6M.9–9.2:** Golden Path de sessão jogável e consistência de deslocamento foram marcados como ✅ no Roadmap compartilhado; há teste integrado `src/scripts/smoke-combat-playable.ts`.
 - **Trabalho recente:** paredes com bloqueios independentes de movimento e ataques/magias; caminho livre validado nos casos claros, além do editor, ping e menus dos tokens.
 - **Áreas de criaturas:** cadastro e execução com salvaguardas no Registro e dano compartilhado implementados, testados e publicados. A elevação vem do grid: mesmo nível entra, outro nível só por exceção do Mestre. Paredes que bloqueiam ataques barram a área. Próximo: teste do sopro na mesa e recarga automática.
@@ -112,7 +112,7 @@
 
 | Etapa | Estado | Descrição breve |
 |---|---|---|
-| **6.6M.5–5.2 — Workspace** | ✅ | Combate em aba própria, grid central, iniciativa/log e menus do Mestre no token, com economia visível fora do turno e recuperação automática de movimento. |
+| **6.6M.5–5.2 — Workspace** | ✅ | Combate em aba própria, grid central, iniciativa/log e menus do Mestre no token, com economia visível fora do turno e recuperação automática de movimento. Registro e Testes separados, com altura reservada e rolagens independentes; morte, salvaguardas e concentração ficam em Testes. |
 | **6.6M.6–6.1.5.1 — Dock do jogador** | ✅ | Retrato, recursos, Hotbar, deslocamento, câmera e utilitários. |
 | **6.6M.6.2–6.2.2 — Estados/filtros** | ✅ | Filtros Ação/Bônus/Reação, espera, tooltip, seleção/desseleção de atalhos. |
 | **6.6M.6.3–6.3.1 — Hotbar 48 slots** | ✅ | Grade 2×24, edição, troca/remoção, salvamento e persistência por personagem. |
