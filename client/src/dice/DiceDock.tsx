@@ -172,10 +172,10 @@ export function DiceDock({ roller }: DiceDockProps) {
                 onKeyDown={cancelAutoClose}
               >
                 <header className="dice-head">
-                  {deathSave ? <DeathSaveTitle /> : <h2>
+                  {!deathSave ? <h2>
                     <Icon name="die" size={18} />
                     {context ? `Teste de ${context.label}` : 'Rolagem livre'}
-                  </h2>}
+                  </h2> : null}
                   {/* No Teste contra a Morte não existe bônus: só o dado decide. */}
                   {context && !deathSave ? (
                     <span className="dice-head-bonus">
@@ -245,6 +245,8 @@ export function DiceDock({ roller }: DiceDockProps) {
                     </div>
                   </div>
                 </div>
+
+                {deathSave ? <DeathSaveTitle /> : null}
 
                 {/* Leitura do resultado, logo abaixo do ring. */}
                 <div className="dice-readout">

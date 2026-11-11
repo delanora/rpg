@@ -136,18 +136,10 @@
 
 .dice-stage.is-death-save .dice-readout {
   position: relative;
-  padding-top: 0.55rem;
+  padding-top: 0;
 }
 
-.dice-stage.is-death-save .dice-readout::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 16%;
-  right: 16%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(190, 148, 92, 0.4), transparent);
-}
+
 
 .dice-stage.is-death-save .dice-readout-hint {
   color: var(--ds-gold);
@@ -399,18 +391,19 @@
   .death-save-flight .ddie-orient { transition: none; }
 }
 
-/* Título ilustrado centralizado na bandeja, sem o fechar deslocar a arte. */
+/* Arte compacta abaixo da bandeja; o fechar fica no canto sem reservar uma faixa. */
 .dice-stage.is-death-save .dice-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  position: absolute;
+  top: .85rem;
+  right: 1rem;
+  z-index: 2;
+  display: block;
 }
 .dice-stage.is-death-save .dice-watch-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
-.dice-stage.is-death-save :is(.dice-head, .dice-watch-head) .death-save-title {
-  grid-column: 1 / -1;
-  grid-row: 1;
+.dice-stage.is-death-save .death-save-title {
   display: flex;
   justify-content: center;
   width: 100%;
@@ -428,12 +421,8 @@
   filter: brightness(1.45) saturate(.8) drop-shadow(0 1px 2px #000) drop-shadow(0 0 5px rgba(201, 164, 104, .16));
   user-select: none;
 }
-.dice-stage.is-death-save :is(.dice-head, .dice-watch-head) .dice-head-close {
+.dice-stage.is-death-save .dice-head .dice-head-close {
   position: static;
-  grid-column: 1 / -1;
-  grid-row: 1;
-  justify-self: end;
-  align-self: center;
 }
 /* O trilho da janela respeita a largura útil do overlay no celular. */
 .dice-overlay.is-death-save {

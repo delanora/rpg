@@ -62,7 +62,6 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
       >
         {/* Cabeçalho: quem está rolando (só leitura para quem assiste). */}
         <header className="dice-watch-head">
-          {deathSave ? <DeathSaveTitle /> : null}
           <Portrait
             src={board.avatarUrl}
             alt={board.actorName}
@@ -138,6 +137,8 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
             </div>
           </div>
         </div>
+
+        {deathSave ? <DeathSaveTitle /> : null}
 
         <div className="dice-readout">
           {settled && result ? (
