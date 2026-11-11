@@ -7054,17 +7054,13 @@ check(
   );
 
   check(
-    'SC111) salvaguarda pendente FORA do retrato, com UMA instância do formulário',
-    dockSource.includes('className="combat-dock-urgent"') &&
-      trackerSource.includes('urgent={\n          <PendingEffectSavePanel') &&
-      (trackerSource.match(/<PendingEffectSavePanel/g) ?? []).length === 1 &&
-      // O painel do retrato não monta uma segunda cópia do formulário.
+    'SC111) salvaguardas aparecem somente no bloco Testes, sem aviso sobre o grid',
+    !trackerSource.includes('<PendingEffectSavePanel') &&
+      !trackerSource.includes('urgent={') &&
+      trackerSource.includes('requests={logRequests}') &&
+      source('src/combat/components/CombatLog.tsx').includes('aria-label="Testes"') &&
       mechSource.includes("const pendingControls = variant !== 'dock'") &&
-      pendingSource.includes('rollPendingEffectSave') &&
-      // Vazio não ocupa espaço; aberto, flutua acima sem mexer na geometria.
-      workspaceRule('.combat-dock-urgent:empty').includes('display: none;') &&
-      workspaceRule('.combat-dock-urgent').includes('position: absolute;') &&
-      workspaceRule('.combat-dock').includes('position: relative;'),
+      pendingSource.includes('rollPendingEffectSave'),
   );
 
   check(
@@ -7441,8 +7437,8 @@ check(
       trackerSource.includes('onSpend={(distance) => dockEconomyAction({ action: \'move\', distance })}') &&
       // Painéis urgentes vivem FORA da Hotbar; nenhum deles é gateado pela dock.
       trackerSource.includes('<ReactionPanel') &&
-      trackerSource.includes('<PendingEffectSavePanel') &&
-      trackerSource.includes('urgent={') &&
+      trackerSource.includes('requests={logRequests}') &&
+      !trackerSource.includes('urgent={') &&
       trackerSource.includes('const showDeathTurn = Boolean(') &&
       // Reação real preservada no glifo: não é sobrescrita na espera.
       dockSource.includes("economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'") &&
@@ -7614,7 +7610,7 @@ check(
       // `context`/`action` e são conteúdo real para o predicado.
       trackerSource.includes('<ReactionPanel') &&
       trackerSource.includes('<ConcentrationSavePanel') &&
-      trackerSource.includes('<PendingEffectSavePanel') &&
+      trackerSource.includes('requests={logRequests}') &&
       trackerSource.includes('const showDeathTurn = Boolean(') &&
       source('src/combat/components/CombatTokenAdjustments.tsx').includes('applyManualHp({ combatantId: combatant.id') &&
       source('src/combat/components/CombatTokenAdjustments.tsx').includes('<MasterEconomyPanel'),

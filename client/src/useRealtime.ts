@@ -1,3 +1,5 @@
+import { EFFECTS_PENDING_EVENT } from './events';
+import { notifyResolutionRequestsChanged } from './combat/resolutionApi';
 import { COMBAT_AREA_VISUAL_EVENT } from './events';
 import { publishAreaVisual } from './combat/grid/areaVisual';
 import { COMBAT_PING_EVENT } from './events';
@@ -199,6 +201,7 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on(COMBAT_AREA_VISUAL_EVENT, publishAreaVisual);
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
     socket.on('mechanical:updated', (payload) => handlersRef.current.onMechanicalUpdated?.(payload));
+    socket.on(EFFECTS_PENDING_EVENT, notifyResolutionRequestsChanged);
     socket.on('effects:updated', (payload) => handlersRef.current.onEffectsUpdated?.(payload));
     socket.on('death:updated', (payload) => handlersRef.current.onDeathUpdated?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));

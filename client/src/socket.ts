@@ -1,3 +1,4 @@
+import type { EffectsPendingPayload } from './types';
 import type { CombatAreaVisualPayload } from '../../src/modules/shared/area-visual';
 import type { CombatPingPayload } from './types';
 import { io, type Socket } from 'socket.io-client';
@@ -80,6 +81,7 @@ export interface ServerToClientEvents {
   'combat:started': (payload: CombatStartedPayload) => void;
   'mechanical:updated': (payload: MechanicalUpdatedPayload) => void;
   /** Efeitos ativos de um alvo (6.5A): já filtrados por papel no servidor. */
+  'effects:pending': (payload: EffectsPendingPayload) => void;
   'effects:updated': (payload: EffectsUpdatedPayload) => void;
   /** Ciclo de morte (6.3): dono do personagem e sala dos mestres. */
   'death:updated': (payload: DeathUpdatedPayload) => void;

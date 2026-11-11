@@ -58,3 +58,5 @@ export interface ConnectionReadyPayload {
 export const COMBAT_PING_EVENT = 'combat:ping' as const;
 
 export const COMBAT_AREA_VISUAL_EVENT = 'combat:area-visual' as const;
+
+export const EFFECTS_PENDING_EVENT = 'effects:pending' as const;

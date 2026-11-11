@@ -41,3 +41,13 @@ export function declineSpellSaveCard(card: CombatResolutionCardDto): Promise<unk
   if (!pendingId) return Promise.reject(new Error('Card sem pendência de salvaguarda.'));
   return declinePendingEffectSave(pendingId);
 }
+
+const resolutionListeners = new Set<() => void>();
+/** A notificação privada invalida a leitura; nenhum card é montado pelo cliente. */
+export function notifyResolutionRequestsChanged(): void {
+  for (const listener of resolutionListeners) listener();
+}
+export function subscribeResolutionRequestsChanged(listener: () => void): () => void {
+  resolutionListeners.add(listener);
+  return () => { resolutionListeners.delete(listener); };
+}

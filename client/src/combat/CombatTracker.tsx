@@ -17,6 +17,7 @@ import {
   declineSpellSaveCard,
   fetchResolutionRequests,
   resolveSpellSaveCard,
+  subscribeResolutionRequestsChanged,
 } from './resolutionApi';
 import { InventoryDock } from '../components/InventoryDock';
 import {
@@ -71,7 +72,6 @@ import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { ReactionPanel } from './components/ReactionPanel';
 import { PlayerCombatDock } from './components/PlayerCombatDock';
-import { PendingEffectSavePanel } from './components/PendingEffectSavePanel';
 import { MovementSpendButton, TurnResourceBar, turnResourceAccess } from './components/TurnResourceBar';
 import { TurnToast } from './components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reactions';
@@ -242,6 +242,7 @@ export function CombatTracker({
   // Leitura do ciclo de morte do combatente do turno (elegibilidade do Teste).
   const [currentDeath, setCurrentDeath] = useState<DeathDto | null>(null);
   /** 6.6I — cards de resolução ativos do registro lateral (read-model do servidor). */
+  const resolutionRead = useRef(0);
   const [resolutionRequests, setResolutionRequests] = useState<CombatResolutionCardDto[]>([]);
   /** Card com uma ação em andamento (desabilita duplo clique). */
   const [resolutionBusyId, setResolutionBusyId] = useState<string | null>(null);
@@ -604,9 +605,10 @@ export function CombatTracker({
    * relê quando o combate ou os efeitos mudam — nunca monta o card sozinho.
    */
   const refreshResolutions = useCallback(async () => {
+    const request = ++resolutionRead.current;
     try {
       const payload = await fetchResolutionRequests(combat.id);
-      setResolutionRequests(payload.requests);
+      if (request === resolutionRead.current) setResolutionRequests(payload.requests);
     } catch {
       // Leitura complementar: sem ela o combate continua utilizável.
     }
@@ -614,6 +616,8 @@ export function CombatTracker({
 
   useEffect(() => {
     void refreshResolutions();
+    const unsubscribe = subscribeResolutionRequestsChanged(() => void refreshResolutions());
+    return () => { unsubscribe(); resolutionRead.current++; };
   }, [refreshResolutions, combat.version, effectsRefresh]);
 
   // O painel central vira MODO TESTE CONTRA A MORTE quando o turno é de um
@@ -1259,20 +1263,7 @@ export function CombatTracker({
         // ESTADO DO PERSONAGEM no retrato (6.6M.6.1.4): o MESMO MechanicalPanel,
         // sem buscar nada de novo — a dock só apresenta.
         statusPanel={statusPanel}
-        // SALVAGUARDA PENDENTE (6.5H/6.6H) FORA do retrato: o jogador resolve
-        // sem abrir o painel e existe UMA instância do formulário.
-        urgent={
-          <PendingEffectSavePanel
-            entity={{ kind: 'combatant', id: dockCombatant.id }}
-            refreshKey={combat.version + effectsRefresh}
-            isMaster={false}
-            busy={busy}
-            onChanged={async () => {
-              const fresh = await fetchActiveCombat().catch(() => null);
-              if (fresh) onCombatChange(fresh);
-            }}
-          />
-        }
+        // Salvaguardas pendentes ficam somente na coluna Testes.
         // O GASTO de deslocamento é o MESMO controle da barra persistente.
         movementControl={
           <MovementSpendButton
