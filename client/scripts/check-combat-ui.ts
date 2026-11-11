@@ -1884,7 +1884,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB115) o card de salvaguarda de magia deriva de PendingEffectSave (sem segunda engine)',
     resolutionService.includes('pendingEffectSave.findMany') &&
-      resolutionService.includes("kind: 'spell-saving-throw'") &&
+      resolutionService.includes("'spell-saving-throw'") &&
       resolutionService.includes('pendingId')
   );
   check(
@@ -2006,7 +2006,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB129) dano/concentração usam eventId DETERMINÍSTICO por ALVO e o roll compartilhado vive no cast',
     source('../src/modules/spells/execution/save-damage-finalizer.ts').includes(
-      'spell-cast:${castId}:target:'
+      ':${castId}:target:'
     ) &&
       source('../src/modules/spells/execution/save-damage-finalizer.ts').includes(
         'noteDamageConcentration('
@@ -2025,7 +2025,7 @@ console.log('Check-combat-ui — refino da UI de combate');
     'CB131) o card continua GENÉRICO: nenhum componente/título dedicado à Chama Sagrada',
     !source('src/combat/components/CombatLog.tsx').includes('Chama Sagrada') &&
       !source('src/combat/components/ResolutionCard.tsx').includes('sacred') &&
-      source('../src/modules/combat/resolution-requests.ts').includes("kind: 'spell-saving-throw'")
+      source('../src/modules/combat/resolution-requests.ts').includes("'spell-saving-throw'")
   );
   check(
     'CB161) barreira multi-alvo: lock do cast, `resolving` e espera por TODA pendência inicial',

@@ -1,3 +1,4 @@
+import { beginCreatureAreaUse, publishCreatureAreaUse } from './creature-area.service.js';
 import { obstacleCoverProvider } from './spatial/obstacle-cover.js';
 import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf } from '../shared/creature-abilities.js';
@@ -1087,6 +1088,8 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
   // metade dos saves resolvida e o combate seguindo. É um bloqueio DIFERENTE de
   // `TURN_END_TRIGGER_PENDING` (save repetido de efeito contínuo, abaixo).
   if (pending?.status === 'ACTIVE') {
+    const areaPending = await prisma.pendingEffectSave.count({where:{creatureAreaUse:{combatId:input.combatId,status:'resolving'},status:'pending'}});
+    if(areaPending)throw new HttpError('Resolva as salvaguardas da habilidade no registro antes de avançar o turno.',409,'ABILITY_RESOLUTION_PENDING');
     const resolvingCasts = await prisma.spellCast.findMany({
       where: { combatId: input.combatId, status: 'resolving' },
       select: { id: true, durationSnapshot: true },
@@ -2531,6 +2534,9 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
         resolution: { kind: 'cancelled', reason: 'combat-ended' },
       },
     });
+    const areaUses=await db.creatureAreaUse.findMany({where:{combatId:combat.id,status:'resolving'},select:{id:true}});
+    await db.pendingEffectSave.updateMany({where:{creatureAreaUseId:{in:areaUses.map(use=>use.id)},status:'pending'},data:{status:'cancelled',resolvedAt:new Date()}});
+    await db.creatureAreaUse.updateMany({where:{combatId:combat.id,status:'resolving'},data:{status:'cancelled',outcome:'cancelled',resolvedAt:new Date()}});
     const {cancelCommittedOpportunitySpells} = await import('./spatial/opportunity-attack.service.js');
     await cancelCommittedOpportunitySpells(db, combat.id);
   });
@@ -2875,7 +2881,8 @@ export async function removeCombatParticipant(
 /** Operação assistida explícita do Mestre, pela mesma economia e journal. */
 export async function useCreatureAbility(actor: CombatActor, input: z.infer<typeof creatureAbilityUseSchema>) {
   requireMaster(actor);
-  return runCombatOperation(actor, input, 'creature-ability', async (db, combat) => {
+  const result=await runCombatOperation(actor, input, 'creature-ability', async (db, combat) => {
+    let areaUseId:string|undefined;
     const unit = actingCombatant(combat, actor, input.combatantId);
     if (!unit.creature || unit.character) throw new HttpError('Escolha uma criatura ou NPC do bestiário.', 400);
     const ability = creatureAbilitiesOf(unit.creature.abilities).find(item => item.id === input.abilityId);
@@ -2898,9 +2905,13 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
         throw new HttpError('Confirme a resolução assistida e o gatilho, quando houver.', 400);
       if (ability.maxUses !== null && (uses[ability.id] ?? 0) >= ability.maxUses)
         throw new HttpError('Usos da habilidade esgotados.', 409, 'CONFLICT');
+      if(ability.execution==='area-save-damage'){
+        if(!input.areaPlacement)throw new HttpError('Posicione a área antes de usar esta habilidade.',400,'AREA_PLACEMENT_REQUIRED');
+        areaUseId=await beginCreatureAreaUse(db,combat,unit,ability,input.areaPlacement);
+      }
       const economy = economyOf(unit.turnEconomy);
       spendEconomy(economy, ability.cost);
-      applyTacticalAction(economy, ability.execution, unit);
+      if(ability.execution!=='area-save-damage')applyTacticalAction(economy, ability.execution, unit);
       if (ability.maxUses !== null) uses[ability.id] = (uses[ability.id] ?? 0) + 1;
       await db.combatant.update({ where: { id: unit.id }, data: { turnEconomy: economy, abilityUses: uses } });
       // Publica só o nome e a descrição do uso, sem custos, gatilho ou saldo.
@@ -2908,8 +2919,10 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
       await appendEconomyLog(db, combat, unit, ability.description ? `${ability.name}: ${ability.description}` : ability.name,
         'creature-ability', { private: unit.spatialVisibility === 'master-only' });
     }
-    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),...(areaUseId?{areaUseId}:{}) };
   });
+  if(result.areaUseId)await publishCreatureAreaUse(result.areaUseId);
+  return result;
 }
 
 /** Decisão privada, persistida e idempotente; não muda os lados dos grupos. */

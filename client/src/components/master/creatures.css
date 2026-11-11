@@ -329,3 +329,23 @@
     grid-template-columns: 1fr;
   }
 }
+
+.creature-area-fields {
+  min-width: 0;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface);
+}
+.creature-area-fields legend {
+  padding: 0 0.45rem;
+  color: var(--gold);
+}
+.creature-area-fields .creature-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  margin-top: 0.75rem;
+}
+.creature-area-fields h4 {
+  margin: 1rem 0 0.5rem;
+}

@@ -73,7 +73,15 @@ A etapa **Ações e habilidades** reúne os ataques e as opções especiais. Cad
 
 No combate, o Mestre acessa as habilidades pelas **Ações do turno** ou pelo botão direito no token → **Habilidades**, inclusive reações fora do turno. Desengajar, Disparada e Esquivar acionam o motor existente; Esconder-se permanece assistido e não oculta o token. Usos são próprios de cada cópia, sobrevivem à reconexão e podem ser restaurados pelo Mestre; não restauram a economia de ações. Definições e saldos são privados. Ao usar uma habilidade de criatura/NPC revelado, o registro dos jogadores mostra somente seu nome e descrição; os campos internos de custo, gatilho e usos restantes não são publicados. Restaurar usos e ações realizadas enquanto oculto continuam privados, inclusive após revelar o token. O servidor valida turno, condições, morte, economia, limite, versão e idempotência na mesma transação.
 
-Contrato: `POST /api/combat/creature-ability` (Mestre), com `combatId`, `combatantId`, `abilityId`, `expectedVersion`, `operationId`, `mode: use|restore` e confirmação para execuções assistidas. O custo e a execução vêm do cadastro, nunca do pedido. Ataques Múltiplos, áreas, recarga, descanso automático e ações lendárias ainda exigem fluxos específicos e não fazem parte desta fundação.
+Contrato: `POST /api/combat/creature-ability` (Mestre), com `combatId`, `combatantId`, `abilityId`, `expectedVersion`, `operationId`, `mode: use|restore` e confirmação para execuções assistidas. O custo e a execução vêm do cadastro, nunca do pedido. Ataques Múltiplos, recarga automática, descanso automático e ações lendárias seguem em etapas posteriores.
+
+### Habilidades em área com salvaguarda e dano
+
+No bestiário, escolha **Área com salvaguarda e dano** e cadastre forma, dimensões, atributo, CD, dano e resultado no sucesso (metade ou nenhum). Cone, linha, esfera, cubo e cilindro usam a mesma seleção do grid. No turno da criatura, **Preparar área** permite posicionar e conferir os atingidos; **Usar** consome a economia e os usos uma única vez. Recarga continua manual pelo controle de usos.
+
+**Convenção da mesa para áreas:** qualquer sobreposição parcial no plano pode atingir. O servidor usa a elevação já definida pelo token/terreno: mesmo nível do executor entra; outro nível fica fora por padrão. O Mestre pode incluir outro nível apenas naquela execução, sem pop-up. Não se exige altura corporal nem altura da origem/destino. Paredes configuradas para bloquear ataques impedem a área; uma exceção de elevação não atravessa a parede. Essa convenção não altera teleporte nem as decisões de travessia de desnível.
+
+As salvaguardas aparecem no **Registro**, usando os cards e a rolagem existentes: o dono responde pelo personagem e o Mestre pelas criaturas/NPCs. Após todas as salvaguardas, um dano compartilhado passa pelas defesas individuais, PV, morte e concentração. O turno aguarda essa resolução. A habilidade não cria uma conjuração nem gasta espaços de magia. A definição e os alvos são fixados no uso, com controle de versão e idempotência; editar o cadastro depois não muda uma execução em andamento.
 
 ## Ataques de oportunidade no grid
 
@@ -999,9 +1007,9 @@ No combate com grid, **segure Alt e clique no mapa** para sinalizar um ponto. O 
 
 #### Conferir atingidos por áreas no grid
 
-Como Mestre, abra o radial no grid vazio e escolha uma área. Defina forma, dimensão, origem e direção; ajuste a **Elevação da origem (m)** e confirme. O servidor destaca atingidos em âmbar e pendências com borda tracejada, usando sobreposição parcial do espaço ocupado e altura corporal. Para remover a pendência de altura, abra os ajustes do token e preencha **Altura corporal (m)**; o resultado é atualizado quando o combate muda.
+Como Mestre, abra o radial no grid vazio e escolha uma área. Defina forma, dimensão, origem e direção e confirme. A consulta privada destaca os atingidos, sem gastar ações ou aplicar dano. Usa sobreposição parcial do espaço ocupado e a elevação do executor atual: outro nível fica fora por padrão e pode ser incluído somente por exceção do Mestre naquela consulta. Não exige altura corporal nem campos de altura da origem/destino. Paredes configuradas para bloquear ataques impedem a propagação; não são contornadas pela exceção de elevação.
 
-Cone e linha miram na horizontal nesta etapa. A esfera usa a elevação como centro; cilindro e cubo começam nesse nível; a linha tem altura vertical explicitamente escolhida pelo Mestre. Essa representação por volumes e o critério de sobreposição são convenções do aplicativo, não um algoritmo geométrico prescrito pelo PHB. Paredes interpostas sem altura física cadastrada permanecem para decisão do Mestre. Os botões **Incluir/Excluir** só aparecem nos casos incertos e são revalidados no servidor; a confirmação vale para essa consulta e é descartada quando a área ou o combate muda. A consulta é privada, não grava alvos nem gasta ações e não aplica dano: cadastrar e executar habilidades de criatura com salvaguarda/dano é a próxima integração.
+Para executar uma habilidade real, cadastre **Área com salvaguarda e dano** no bestiário e use **Preparar área** em Habilidades. As dimensões vêm do cadastro. Depois de conferir os atingidos, **Usar** consome Ação/Ação Bônus e usos, cria as salvaguardas no Registro e resolve o dano pelo pipeline compartilhado. A confirmação de elevação vale só para aquela execução. A convenção de elevação foi escolhida pela mesa; não pretende simular volumes físicos do corpo nem altera teleporte.
 
 ## O fluxo, passo a passo
 

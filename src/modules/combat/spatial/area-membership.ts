@@ -5,21 +5,21 @@ import {
   type AreaShapeDefinition,
 } from '../../spells/execution/area-targeting.js';
 import { occupiedSpaceOf } from './occupied-space.js';
-import { surfaceElevation } from './elevation.js';
 import type { SpatialBody } from './spatial-distance.js';
 import type { SpatialSceneConfig } from './spatial.types.js';
 
 const coordinate = z.number().finite().min(-100_000).max(100_000);
-/** Intenção livre do Mestre para consulta; execuções usarão dimensões do cadastro. */
+/** Intenção livre do Mestre para consulta; execuções usam dimensões do cadastro. */
 export const gridAreaQuerySchema = z
   .object({
+    casterCombatantId: z.string().min(1).optional(),
     decisions: z.array(areaUnknownDecisionSchema).max(1000).optional(),
     shape: areaShapeSchema,
     origin: z
       .object({
         xFeet: coordinate,
         yFeet: coordinate,
-        elevationFeet: coordinate,
+        elevationFeet: coordinate.optional(),
       })
       .strict(),
     angle: z
@@ -28,7 +28,7 @@ export const gridAreaQuerySchema = z
       .min(-Math.PI * 2)
       .max(Math.PI * 2)
       .default(0),
-    /** Espessura vertical da linha é uma escolha explícita do Mestre nesta consulta. */
+    /** Compatibilidade de payloads anteriores; a convenção de elevação ignora este campo. */
     lineHeightFeet: z.number().finite().positive().max(2000).optional(),
   })
   .strict()
@@ -90,29 +90,7 @@ function polygonFor(shape: AreaShapeDefinition, points: Point[]): Point[] {
     (p) => half + p.y,
   );
 }
-/** Mínimo quadrático sobre o polígono: dentro do cone horizontal a função
- * y² + dz² − x²/4 não tem mínimo interior estrito; basta avaliar suas arestas. */
-function coneOverlaps(poly: Point[], dz: number) {
-  let minimum = Infinity;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i],
-      q = poly[(i + 1) % poly.length],
-      dx = q.x - p.x,
-      dy = q.y - p.y;
-    const a = dy * dy - (dx * dx) / 4,
-      b = 2 * p.y * dy - (p.x * dx) / 2;
-    const values = [0, 1];
-    if (a > EPS) values.push(Math.max(0, Math.min(1, -b / (2 * a))));
-    for (const t of values) {
-      const x = p.x + t * dx,
-        y = p.y + t * dy;
-      minimum = Math.min(minimum, y * y + dz * dz - (x * x) / 4);
-    }
-  }
-  return minimum < -EPS;
-}
-/** Convenção explícita do aplicativo: espaço ocupado extrudido pela altura
- * corporal. Qualquer sobreposição positiva conta; mero contato de borda não. */
+/** Sobreposição horizontal dos footprints; a elevação é decidida separadamente. */
 export function areaMembership(
   query: GridAreaQuery,
   scene: SpatialSceneConfig,
@@ -153,37 +131,5 @@ export function areaMembership(
       return answer('fail', 'outside-area');
   } else if (polygon.length < 3 || area(polygon) <= EPS)
     return answer('fail', 'outside-area');
-  const base =
-    body!.elevationFeet ?? surfaceElevation(scene, body!.position!, body!.size);
-  if (base === null) return answer('unknown', 'surface-height-unknown');
-  if (body!.bodyHeightFeet == null || body!.bodyHeightFeet <= 0)
-    return answer('unknown', 'body-height-missing');
-  const top = base + body!.bodyHeightFeet;
-  const dz = Math.max(
-    base - origin.elevationFeet,
-    origin.elevationFeet - top,
-    0,
-  );
-  if (shape.kind === 'sphere')
-    return answer(
-      planarDistance + dz * dz < shape.radiusFeet ** 2 - EPS ? 'pass' : 'fail',
-      'outside-area',
-    );
-  if (shape.kind === 'cone')
-    return answer(coneOverlaps(polygon, dz) ? 'pass' : 'fail', 'outside-area');
-  const height =
-    shape.kind === 'cube'
-      ? shape.sizeFeet
-      : shape.kind === 'cylinder'
-        ? shape.heightFeet
-        : query.lineHeightFeet;
-  if (height === undefined) return answer('unknown', 'line-height-missing');
-  return answer(
-    Math.min(top, origin.elevationFeet + height) -
-      Math.max(base, origin.elevationFeet) >
-      EPS
-      ? 'pass'
-      : 'fail',
-    'outside-area',
-  );
+  return answer('pass');
 }

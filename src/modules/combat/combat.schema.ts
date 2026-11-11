@@ -1,3 +1,4 @@
+import { creatureAreaPlacementSchema } from '../shared/creature-abilities.js';
 import { spellcastingSourceRefSchema } from '../spells/execution/spellcasting-source.js';
 import { castingResourceRefSchema } from '../spells/execution/casting-resource.js';
 import { z } from 'zod';
@@ -334,13 +335,20 @@ export const removeParticipantSchema = combatOperationSchema.extend({
 export type AddParticipantsInput = z.infer<typeof addParticipantsSchema>;
 export type RemoveParticipantInput = z.infer<typeof removeParticipantSchema>;
 
+export const creatureAreaPreviewSchema = z.object({
+  combatantId: z.string().min(1),
+  abilityId: z.string().min(1),
+  placement: creatureAreaPlacementSchema,
+}).strict();
+
 /** Habilidade cadastrada: custo e efeito nunca vêm do pedido. */
 export const creatureAbilityUseSchema = combatOperationSchema.extend({
   combatantId: z.string().min(1),
   abilityId: z.string().min(1),
+  areaPlacement: creatureAreaPlacementSchema.optional(),
   mode: z.enum(['use', 'restore']).default('use'),
   confirmed: z.boolean().default(false),
-});
+}).strict();
 
 export const hostilityDecisionSchema = combatOperationSchema.extend({
   promptId: z.string().min(1),

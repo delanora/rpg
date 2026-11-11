@@ -621,9 +621,11 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
  * efeito contínuo. Uma magia nova não precisa de `if` aqui.
  */
 async function pendingCastResolutionKind(pending: {
+  creatureAreaUseId?: string | null;
   spellCastId: string | null;
   phase: string;
 }): Promise<'immediate-effect' | 'save-effect' | 'save-damage' | null> {
+  if(pending.phase==='initial'&&pending.creatureAreaUseId)return 'save-damage';
   if (pending.phase !== 'initial' || !pending.spellCastId) return null;
   const cast = await prisma.spellCast.findUnique({
     where: { id: pending.spellCastId },
@@ -648,7 +650,7 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
   const ability = pending.ability;
   const loaded = await loadEntity(targetEntity);
   // Salvaguarda de criatura/NPC: visibilidade escolhida pelo Mestre AO ROLAR.
-  const privateRoll = actor.role === 'MASTER' && input.visibility === 'private';
+  const privateRoll = pending.visibility === 'private' || (actor.role === 'MASTER' && input.visibility === 'private');
 
   const effectSet = await effectModifierSetFor(targetEntity);
   const effectMods = rollModifiersFor(effectSet, 'save', ability);
@@ -726,7 +728,7 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
     // 6.6J.1: SUCESSO também pode causar dano (meia-dano). O resumo do registro
     // vem do snapshot, então o log mostra o valor DEPOIS do save e o valor
     // final — sem o cliente recalcular nada.
-    damageSummary = outcome.snapshot && outcome.snapshot.finalDamage > 0
+    damageSummary = !pending.creatureAreaUseId && outcome.snapshot && outcome.snapshot.finalDamage > 0
       ? {
           type: outcome.snapshot.damageType,
           raw: outcome.snapshot.rawDamage,

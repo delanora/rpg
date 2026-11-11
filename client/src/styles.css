@@ -18015,3 +18015,5 @@ body:has(.app-shell.has-ongoing-combat) .roll-log-fab:is(:hover, :focus-visible)
 .grid-area-controls.has-assessment .grid-area-assessment { box-sizing: border-box; max-width: 100%; }
 
 .grid-area-decisions { display: inline-flex; gap: .3rem; margin: .3rem .5rem; }
+
+.grid-area-assessment > .btn-primary { display: block; width: 100%; margin: .25rem 0 .6rem; }

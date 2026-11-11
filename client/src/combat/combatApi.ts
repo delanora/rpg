@@ -1,3 +1,4 @@
+import type { CreatureAreaPlacement } from '../../../src/modules/shared/creature-abilities';
 import { api } from '../api';
 import { createOperationId } from '../utils';
 import type { SpatialPosition, AttackResolvedPayload, CombatDto, CombatUsableItem, DiceRollDto } from '../types';
@@ -144,7 +145,7 @@ export function endCombat(): Promise<void> {
  * a `crypto.randomUUID()` quebrava em contexto NÃO seguro (HTTP por IP de
  * rede), onde ele é `undefined` — e isso derrubava TODAS as ações de combate.
  */
-export function operationFor(combat: CombatDto) {
+export function operationFor(combat: Pick<CombatDto, 'id' | 'version'>) {
   return { combatId: combat.id, expectedVersion: combat.version, operationId: createOperationId() };
 }
 export type EconomyAction =
@@ -190,7 +191,7 @@ export function removeCombatParticipant(combat: CombatDto, combatantId: string):
  return api<{combat: CombatDto}>('/api/combat/participants/remove', {method:'POST', body:{...operationFor(combat),combatantId}}).then(r=>r.combat);
 }
 
-export function useCreatureAbility(combat: CombatDto, input: { combatantId: string; abilityId: string; mode?: 'use' | 'restore'; confirmed?: boolean }): Promise<CombatDto> {
+export function useCreatureAbility(combat: Pick<CombatDto,'id'|'version'>, input: { combatantId: string; abilityId: string; areaPlacement?:CreatureAreaPlacement; operationId?:string; mode?: 'use' | 'restore'; confirmed?: boolean }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/creature-ability', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }
 

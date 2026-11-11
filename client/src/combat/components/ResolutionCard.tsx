@@ -58,7 +58,7 @@ export function ResolutionCard({
   const [options, setOptions] = useState<EffectOptionalModifierDto[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
 
-  const isSpell = card.kind === 'spell-saving-throw';
+  const isSpell = card.kind === 'spell-saving-throw' || card.kind === 'ability-saving-throw';
   const entity = card.reference.entity;
   const ability = card.ability;
 

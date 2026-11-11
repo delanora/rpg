@@ -116,6 +116,7 @@ export interface GridTargeting {
 }
 
 export interface CombatGridProps {
+  areaAbilityRequest?: {id:number;combatantId:string;definition:NonNullable<AreaPreviewRequest['ability']>['definition']}|null;
   /**
    * Estado AUTORITATIVO vindo do servidor (`Combat.spatial` + `Combatant.spatial`).
    * O grid não mantém segunda fonte de posição: `onCombatChange` recebe o DTO
@@ -273,6 +274,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
  */
 export function CombatGrid({
   combat,
+  areaAbilityRequest,
   isMaster,
   relationReferenceId,
   onInspectToken,
@@ -426,6 +428,18 @@ export function CombatGrid({
    */
   const active = scene.mode === 'grid-2d';
   const areaSceneKey = `${combat.id}:${combat.sceneBackgroundImageUrl ?? ''}:${scene.widthFeet}:${scene.heightFeet}`;
+  const areaAbilityHandled=useRef<number|null>(null);
+  useEffect(()=>{
+    if(!isMaster||!areaAbilityRequest||areaAbilityHandled.current===areaAbilityRequest.id)return;
+    areaAbilityHandled.current=areaAbilityRequest.id;
+    const unit=combat.combatants.find(item=>item.id===areaAbilityRequest.combatantId);
+    const space=unit?.spatial?.occupiedSpace;
+    if(!space||!areaAbilityRequest.definition.area){onError('Posicione a criatura no grid antes de preparar a área.');return;}
+    areaAbilityHandled.current=areaAbilityRequest.id;
+    setMode('none');
+    setAreaRequest({id:++areaRequestId.current,shape:areaAbilityRequest.definition.area.shape.kind,origin:{xFeet:(space.minXFeet+space.maxXFeet)/2,yFeet:(space.minYFeet+space.maxYFeet)/2},ability:{combatantId:areaAbilityRequest.combatantId,definition:areaAbilityRequest.definition},scope:areaSceneKey});
+  },[areaAbilityRequest,isMaster,areaSceneKey,combat.combatants,onError]);
+
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;
   const geometry = { pixelsPerCell: DEFAULT_PIXELS_PER_CELL, cellSizeFeet };
   const { placed, unplaced } = useMemo(() => splitByPlacement(combat.combatants), [combat.combatants]);
@@ -2290,8 +2304,9 @@ export function CombatGrid({
           </div>
 
           <GridAreaPreview
-            assessmentContext={isMaster ? {combatId:combat.id,version:combat.version} : null}
+            assessmentContext={isMaster ? {combatId:combat.id,version:combat.version,casterCombatantId:combat.currentCombatantId??undefined} : null}
             onTargets={setAreaReadings}
+            onCombatChange={onCombatChange}
             key={areaSceneKey}
             camera={camera} geometry={geometry} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet}
             request={areaRequest?.scope === areaSceneKey ? areaRequest : null}

@@ -48,8 +48,9 @@ const rows = [
     name: 'Sentinela',
     geometry: 'unknown',
     propagation: 'pass',
-    affected: 'unknown',
-    reasons: ['body-height-missing'],
+    affected: 'fail',
+    overrideAllowed: true,
+    reasons: ['different-elevation'],
   },
 ];
 globals.fetch = async (_path: unknown, init: { body: string }) => {
@@ -105,19 +106,18 @@ try {
   await act(async () => button('Confirmar').click());
   assert.equal(calls, 1);
   assert.ok(
-    document.body.textContent?.includes('1 atingido(s) · 1 a confirmar'),
+    document.body.textContent?.includes('1 atingido(s)'),
   );
-  assert.ok(document.body.textContent?.includes('Cadastre a altura corporal'));
+  assert.ok(document.body.textContent?.includes('Outra elevação · fora por padrão'));
   assert.equal(highlighted.length, 2);
   assert.ok(posted && !Object.hasOwn(posted, 'targetIds'));
   assert.deepEqual((posted as unknown as { origin: unknown }).origin, {
     xFeet: 20,
     yFeet: 15,
-    elevationFeet: 0,
   });
   await act(async () => button('Incluir').click());
   assert.ok(
-    document.body.textContent?.includes('2 atingido(s) · 0 a confirmar'),
+    document.body.textContent?.includes('2 atingido(s)'),
   );
   assert.ok(document.body.textContent?.includes('decisão do Mestre'));
   fail = true;

@@ -52,6 +52,7 @@ export interface PendingEffectSaveDto {
   declinedAt: string | null;
   /** Conjuração que originou a pendência (6.6A; null em fluxos antigos). */
   spellCastId: string | null;
+  creatureAreaUseId?: string | null;
   /**
    * 6.6J.5 — cobertura CONHECIDA para esta salvaguarda (só Destreza e só sem
    * `ignoreSaveCover`). `null` = sem benefício; nunca "meia cobertura" inferida.
@@ -109,7 +110,7 @@ export function toPendingEffectSaveDto(row: PendingEffectSave): PendingEffectSav
   return {
     id: row.id,
     definitionId: row.definitionId,
-    label: definitionLabel(row.definitionId),
+    label: row.sourceLabel ?? definitionLabel(row.definitionId),
     ability: row.ability as AbilityKey,
     dc: row.dc,
     visibility: row.visibility === 'private' ? 'private' : 'public',
@@ -126,6 +127,7 @@ export function toPendingEffectSaveDto(row: PendingEffectSave): PendingEffectSav
     triggerKey: row.triggerKey ?? null,
     declinedAt: row.declinedAt ? row.declinedAt.toISOString() : null,
     spellCastId: row.spellCastId ?? null,
+    creatureAreaUseId: row.creatureAreaUseId ?? null,
     cover: coverOf(row.cover),
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
@@ -175,7 +177,7 @@ export async function cancelPendingEffectSavesForEntity(
   // apontando para entidade removida (6.6A). A concentração anterior NÃO volta.
   const linked = await db.pendingEffectSave.findMany({
     where,
-    select: { spellCastId: true },
+    select: { spellCastId: true, creatureAreaUseId:true },
   });
   const cancelled = await db.pendingEffectSave.updateMany({
     where,
@@ -196,6 +198,11 @@ export async function cancelPendingEffectSavesForEntity(
       where: { id: { in: castIds }, status: 'resolving' },
       data: { status: 'cancelled', outcome: 'cancelled', resolvedAt: new Date() },
     });
+  }
+  const areaIds=linked.map(row=>row.creatureAreaUseId).filter((id):id is string=>Boolean(id));
+  if(areaIds.length){
+    await db.pendingEffectSave.updateMany({where:{creatureAreaUseId:{in:areaIds},status:'pending'},data:{status:'cancelled',resolvedAt:new Date()}});
+    await db.creatureAreaUse.updateMany({where:{id:{in:areaIds},status:'resolving'},data:{status:'cancelled',outcome:'cancelled',resolvedAt:new Date()}});
   }
   return cancelled.count;
 }

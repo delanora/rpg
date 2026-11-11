@@ -1,3 +1,4 @@
+import { loadSaveDamageSource, updateSaveDamageSource, type SaveDamageSourceKind } from '../../combat/save-damage-source.js';
 import type { Prisma } from '@prisma/client';
 import { HttpError } from '../../../lib/http-error.js';
 import { rollDie } from '../../shared/dice.js';
@@ -11,7 +12,6 @@ import { noteDamageConcentration } from '../../concentration/concentration.servi
 import { applySaveDamageOutcome, type SaveDamageShare } from './save-damage-outcome.js';
 import { cantripScalingLevelOf } from './cantrip-scaling.service.js';
 import { buildSaveDamageTargetSnapshot, saveResultOf } from './save-result-snapshot.js';
-import { spellExecutionDefinition } from './spell-execution-registry.js';
 import {
   parseSpellResolutionSnapshot,
   type SaveDamageCastSnapshot,
@@ -40,13 +40,13 @@ import {
  */
 
 /** Identidade do roll compartilhado (índice prepara múltiplos rolls futuros). */
-export function sharedDamageRollIdOf(castId: string, index = 0): string {
-  return `spell-cast:${castId}:damage-roll:${index}`;
+export function sharedDamageRollIdOf(castId: string, index = 0, sourceKind:SaveDamageSourceKind='spell'): string {
+  return `${sourceKind==='spell'?'spell-cast':'creature-area'}:${castId}:damage-roll:${index}`;
 }
 
 /** Identidade do EVENTO de dano de UM alvo (nunca compartilhada). */
-export function targetDamageEventIdOf(castId: string, target: MechanicalEntity): string {
-  return `spell-cast:${castId}:target:${target.kind}:${target.id}:damage`;
+export function targetDamageEventIdOf(castId: string, target: MechanicalEntity, sourceKind:SaveDamageSourceKind='spell'): string {
+  return `${sourceKind==='spell'?'spell-cast':'creature-area'}:${castId}:target:${target.kind}:${target.id}:damage`;
 }
 
 function entityOf(kind: string, id: string): MechanicalEntity {
@@ -99,13 +99,14 @@ function resultsFromSnapshot(snapshot: SaveDamageCastSnapshot | null) {
 export async function finalizeSaveDamageCast(
   castId: string,
   db: Prisma.TransactionClient,
-  options: { roll?: (sides: number) => number } = {},
+  options: { roll?: (sides: number) => number; sourceKind?:SaveDamageSourceKind } = {},
 ): Promise<SaveDamageFinalization> {
   const roll = options.roll ?? rollDie;
+  const sourceKind=options.sourceKind??'spell';
   // Lock TRANSACIONAL do cast: última barreira contra duas finalizações.
   await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${castId}))`;
 
-  const cast = await db.spellCast.findUnique({ where: { id: castId } });
+  const cast = await loadSaveDamageSource(castId,db,sourceKind);
   if (!cast) return emptyResult(castId, true);
 
   const stored = parseSpellResolutionSnapshot(cast.resolutionSnapshot);
@@ -120,7 +121,7 @@ export async function finalizeSaveDamageCast(
   }
 
   const pendings = await db.pendingEffectSave.findMany({
-    where: { spellCastId: castId, phase: 'initial' },
+    where: { ...(sourceKind==='spell'?{spellCastId:castId}:{creatureAreaUseId:castId}), phase: 'initial' },
     orderBy: { createdAt: 'asc' },
   });
   // BARREIRA: nenhum dano antes de TODOS os saves iniciais serem terminais.
@@ -128,7 +129,7 @@ export async function finalizeSaveDamageCast(
     return emptyResult(castId, false);
   }
 
-  const execution = spellExecutionDefinition(cast.spellId);
+  const execution = cast.execution;
   const resolution = execution?.resolution;
   if (!execution || resolution?.kind !== 'save-damage') {
     throw new HttpError(
@@ -191,8 +192,9 @@ export async function finalizeSaveDamageCast(
     return true;
   });
 
+  const sourceName=cast.kind==='creature-ability'&&cast.visibility==='private'?'Origem oculta':caster?.name??'Sistema';
   const needsDamage = validTargets.some((item) => item.share !== 'none');
-  const scalingLevel = caster ? (await cantripScalingLevelOf(caster, db)).level : 1;
+  const scalingLevel = sourceKind==='creature-ability'?1:caster ? (await cantripScalingLevelOf(caster, db)).level : 1;
 
   // ROLL COMPARTILHADO: cada componente é rolado UMA vez para TODOS os alvos.
   const damageRoll = needsDamage
@@ -205,7 +207,7 @@ export async function finalizeSaveDamageCast(
           return { type: component.type, count, sides: dice.sides, rolls, raw };
         });
         return {
-          id: sharedDamageRollIdOf(castId),
+          id: sharedDamageRollIdOf(castId,0,sourceKind),
           index: 0,
           components,
           rawDamage: components.reduce((sum, component) => sum + component.raw, 0),
@@ -220,7 +222,7 @@ export async function finalizeSaveDamageCast(
   const results: SaveDamageTargetResult[] = [];
 
   for (const item of planned) {
-    const eventId = targetDamageEventIdOf(castId, item.target);
+    const eventId = targetDamageEventIdOf(castId, item.target,sourceKind);
     if (!item.valid || !damageRoll) {
       results.push({
         target: { kind: item.target.kind, id: item.target.id },
@@ -312,7 +314,7 @@ export async function finalizeSaveDamageCast(
 
     const damage = await resolveDamage(db, {
       eventId,
-      source: { kind: 'spell', spellCastId: cast.id, label: execution.spellId },
+      source: sourceKind==='spell'?{ kind: 'spell', spellCastId: cast.id, label: execution.spellId }:{kind:'feature',label:cast.label},
       target: await damageTargetOf(db, loaded.entity),
       components: adjusted.map((component) => ({
         type: component.type,
@@ -332,16 +334,16 @@ export async function finalizeSaveDamageCast(
             hpBefore: damage.hpBefore ?? 0,
             hpTempBefore: damage.hpTempBefore,
             critical: false,
-            sourceName: caster?.name ?? 'Magia',
+            sourceName: sourceName,
           },
           db,
-          caster?.name ?? 'Magia',
+          sourceName,
         );
         if (consequence.changed) deathTargets.push(loaded.entity);
       }
       const noted = await noteDamageConcentration(loaded.entity, damage.finalDamage, db, {
         eventId,
-        sourceName: caster?.name ?? 'Magia',
+        sourceName: sourceName,
       });
       concentration = noted.changed;
       concentrationChanged = concentrationChanged || noted.changed;
@@ -379,7 +381,7 @@ export async function finalizeSaveDamageCast(
   const snapshot: SaveDamageCastSnapshot = {
     kind: 'save-damage',
     castId,
-    eventId: damageRoll?.id ?? sharedDamageRollIdOf(castId),
+    eventId: damageRoll?.id ?? sharedDamageRollIdOf(castId,0,sourceKind),
     outcome: { success: resolution.outcome.success, failure: resolution.outcome.failure },
     damageType,
     damageRoll: damageRoll
@@ -433,24 +435,30 @@ export async function finalizeSaveDamageCast(
             modifier: component.modifier,
           })),
           target: result.target,
-          casterName: caster?.name ?? 'Sistema',
+          casterName: sourceName,
         }) as unknown as Prisma.InputJsonValue,
       },
     });
   }
 
-  await db.spellCast.update({
-    where: { id: castId },
-    data: {
+  await updateSaveDamageSource(castId,db,sourceKind,{
       status: 'resolved',
       outcome: dealt ? 'effect' : 'no-effect',
       resolvedAt: new Date(),
       resolutionSnapshot: snapshot as unknown as Prisma.InputJsonValue,
-    },
   });
 
+  if(cast.kind==='creature-ability'){
+    const {appendEconomyLog}=await import('../../combat/combat.service.js');
+    const {loadCombatById}=await import('../../combat/combat-load.js');
+    const combat=await loadCombatById(cast.combatId,db);
+    for(const result of results){
+      const target=combat.combatants.find(unit=>result.target.kind==='character'?unit.characterId===result.target.id:unit.id===result.target.id);
+      await appendEconomyLog(db,combat,{name:cast.casterLabel},`${cast.label} → ${target?.name??'Alvo removido'}: ${result.finalDamage} de dano${result.status==='unavailable'?' (alvo indisponível)':''}.`,'creature-area-damage',{private:cast.visibility==='private'||target?.spatialVisibility==='master-only'});
+    }
+  }
   const { settleOpportunitySpell } = await import('../../combat/spatial/opportunity-attack.service.js');
-  await settleOpportunitySpell(db, castId);
+  if(sourceKind==='spell') await settleOpportunitySpell(db, castId);
 
   return {
     completed: true,

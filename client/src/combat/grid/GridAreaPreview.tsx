@@ -1,4 +1,13 @@
-import { queryGridArea, type AreaReading } from './areaQueryApi';
+import { ApiError } from '../../api';
+import { createOperationId } from '../../utils';
+import { useCreatureAbility } from '../combatApi';
+import type { CombatDto } from '../../types';
+import type { CreatureAreaPlacement } from '../../../../src/modules/shared/creature-abilities';
+import {
+  queryGridArea,
+  queryCreatureArea,
+  type AreaReading,
+} from './areaQueryApi';
 import type { GridAreaQuery } from '../../../../src/modules/combat/spatial/area-membership';
 import {
   PREVIEW_SHAPES,
@@ -11,25 +20,27 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 import type { SpatialPosition } from '../../types';
-import {
-  formatSceneMeters,
-  metersToFeet,
-  feetToMeters,
-} from '../../sceneUnits';
+import { formatSceneMeters } from '../../sceneUnits';
 import { feetToScenePixel, sceneToScreen, type GridCamera } from './gridCamera';
 
 const RADII_FEET = [5, 10, 15, 20, 30, 40, 60] as const;
+type AbilityContext = NonNullable<AreaPreviewRequest['ability']>;
 type Marker = {
+  ability?: AbilityContext;
   center: SpatialPosition;
   radiusFeet: number;
   shape: PreviewShape;
   widthFeet: number;
   heightFeet: number;
   angle: number;
-  elevationFeet: number;
 };
 interface Props {
-  assessmentContext?: { combatId: string; version: number } | null;
+  onCombatChange?: (combat: CombatDto) => void;
+  assessmentContext?: {
+    combatId: string;
+    version: number;
+    casterCombatantId?: string;
+  } | null;
   onTargets?: (targets: AreaReading[]) => void;
   request?: AreaPreviewRequest | null;
   camera: GridCamera;
@@ -45,6 +56,7 @@ interface Props {
 /** O desenho é local; a consulta privada de atingidos vem do servidor.
  * Não executa ataques, dano ou consumo de recursos. */
 export function GridAreaPreview({
+  onCombatChange,
   assessmentContext,
   onTargets,
   request,
@@ -57,11 +69,22 @@ export function GridAreaPreview({
   panning,
   pinging,
 }: Props) {
+  const [abilityContext, setAbilityContext] = useState<
+    AbilityContext | undefined
+  >();
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const [executing, setExecuting] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const pendingUse = useRef<{
+    combat: { id: string; version: number };
+    context: AbilityContext;
+    placement: CreatureAreaPlacement;
+    operationId: string;
+  } | null>(null);
   const [decisionState, setDecisionState] = useState<{
     key: string;
     items: { targetKey: string; affected: boolean }[];
   }>({ key: '', items: [] });
-  const [elevation, setElevation] = useState('0');
   const [readings, setReadings] = useState<AreaReading[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,19 +101,37 @@ export function GridAreaPreview({
   const directional = previewDirectional(shape);
   const radialId = useRef<number | null>(null);
   useEffect(() => {
-    if (!request || disabled || radialId.current === request.id) return;
+    if (
+      !request ||
+      disabled ||
+      executing ||
+      uncertain ||
+      radialId.current === request.id
+    )
+      return;
     radialId.current = request.id;
+    setAbilityContext(request.ability);
     setShape(request.shape);
     setCenter(request.origin);
-    setRadiusFeet(10);
-    setLineWidth(5);
+    const definition = request.ability?.definition.area;
+    setRadiusFeet(
+      definition
+        ? 'radiusFeet' in definition.shape
+          ? definition.shape.radiusFeet
+          : 'sizeFeet' in definition.shape
+            ? definition.shape.sizeFeet
+            : definition.shape.lengthFeet
+        : 10,
+    );
+    setLineWidth(
+      definition?.shape.kind === 'line' ? definition.shape.widthFeet : 5,
+    );
     setHeight(request.shape === 'line' ? 5 : 20);
     setAngle(0);
-    setElevation('0');
     setPicked(!previewDirectional(request.shape));
     setAiming(previewDirectional(request.shape));
     setEditing(true);
-  }, [request, disabled]);
+  }, [request, disabled, executing, uncertain]);
   const panClick = useRef(false);
   const down = useRef<{ x: number; y: number } | null>(null);
   const toggle = useRef<HTMLButtonElement>(null);
@@ -126,12 +167,12 @@ export function GridAreaPreview({
 
   function start() {
     if (disabled) return;
+    setAbilityContext(saved?.ability);
     setCenter(saved?.center ?? null);
     setRadiusFeet(saved?.radiusFeet ?? 10);
     setShape(saved?.shape ?? 'sphere');
     setLineWidth(saved?.widthFeet ?? 5);
     setHeight(saved?.heightFeet ?? 20);
-    setElevation(String(feetToMeters(saved?.elevationFeet ?? 0)));
     setAngle(saved?.angle ?? 0);
     setAiming(false);
     setPicked(Boolean(saved));
@@ -159,7 +200,7 @@ export function GridAreaPreview({
             widthFeet: lineWidth,
             heightFeet: height,
             angle,
-            elevationFeet: metersToFeet(Number(elevation.replace(',', '.'))),
+            ability: abilityContext,
           }
         : null
       : saved;
@@ -172,6 +213,7 @@ export function GridAreaPreview({
     decisionState.key === decisionKey ? decisionState.items : [];
   useEffect(() => {
     let alive = true;
+    setFingerprint(null);
     setReadings([]);
     setError(null);
     onTargets?.([]);
@@ -199,23 +241,39 @@ export function GridAreaPreview({
                   widthFeet: saved.widthFeet,
                 };
     setLoading(true);
-    queryGridArea(assessmentContext.combatId, {
+    const input = {
       decisions,
+      casterCombatantId: assessmentContext.casterCombatantId,
       shape: volume,
-      origin: {
-        xFeet: saved.center.xFeet,
-        yFeet: saved.center.yFeet,
-        elevationFeet: saved.elevationFeet,
-      },
+      origin: { xFeet: saved.center.xFeet, yFeet: saved.center.yFeet },
       angle: saved.angle,
-      ...(saved.shape === 'line' ? { lineHeightFeet: saved.heightFeet } : {}),
-    })
+    };
+    const reading = saved.ability
+      ? queryCreatureArea(
+          assessmentContext.combatId,
+          saved.ability.combatantId,
+          saved.ability.definition.id,
+          { origin: input.origin, angle: input.angle, decisions },
+        )
+      : queryGridArea(assessmentContext.combatId, input);
+    reading
       .then((result) => {
         if (!alive) return;
         if (result.combatVersion !== assessmentContext.version) {
           setError('O combate mudou. Ajuste a área para conferir novamente.');
           return;
         }
+        if (
+          saved.ability &&
+          JSON.stringify(result.area) !==
+            JSON.stringify(saved.ability.definition.area)
+        ) {
+          setError(
+            'O cadastro mudou. Atualize o combate antes de preparar a habilidade.',
+          );
+          return;
+        }
+        setFingerprint(result.definitionFingerprint ?? null);
         setReadings(result.candidates);
         onTargets?.(result.candidates);
       })
@@ -239,14 +297,64 @@ export function GridAreaPreview({
     disabled,
     assessmentContext?.combatId,
     assessmentContext?.version,
+    assessmentContext?.casterCombatantId,
     onTargets,
     decisionState,
   ]);
   useEffect(() => () => onTargets?.([]), [onTargets]);
-  const elevationValid =
-    Boolean(elevation.trim()) &&
-    Number.isFinite(Number(elevation.replace(',', '.'))) &&
-    Math.abs(Number(elevation.replace(',', '.'))) <= 3000;
+  async function executeAbility() {
+    if (
+      executing ||
+      !assessmentContext ||
+      !saved?.ability ||
+      (!fingerprint && !pendingUse.current)
+    )
+      return;
+    const intention = pendingUse.current ?? {
+      combat: {
+        id: assessmentContext.combatId,
+        version: assessmentContext.version,
+      },
+      context: saved.ability,
+      placement: {
+        origin: saved.center,
+        angle: saved.angle,
+        decisions,
+        definitionFingerprint: fingerprint!,
+      },
+      operationId: createOperationId(),
+    };
+    pendingUse.current = intention;
+    setExecuting(true);
+    setError(null);
+    try {
+      const combat = await useCreatureAbility(intention.combat, {
+        combatantId: intention.context.combatantId,
+        abilityId: intention.context.definition.id,
+        areaPlacement: intention.placement,
+        operationId: intention.operationId,
+        confirmed: true,
+      });
+      pendingUse.current = null;
+      setUncertain(false);
+      setSaved(null);
+      setAbilityContext(undefined);
+      onTargets?.([]);
+      onCombatChange?.(combat);
+    } catch (cause) {
+      const rejected =
+        cause instanceof ApiError && cause.status >= 400 && cause.status < 500;
+      if (rejected) pendingUse.current = null;
+      setUncertain(!rejected);
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Não foi possível usar a habilidade.',
+      );
+    } finally {
+      setExecuting(false);
+    }
+  }
   // O acesso inicial fica no radial; controles só existem com uma prévia.
   if (!saved && (!editing || disabled)) return null;
 
@@ -371,7 +479,7 @@ export function GridAreaPreview({
               ref={toggle}
               className="btn btn-small"
               type="button"
-              disabled={disabled}
+              disabled={disabled || executing || uncertain}
               onClick={start}
               title={
                 saved
@@ -387,6 +495,7 @@ export function GridAreaPreview({
               <button
                 type="button"
                 className="btn btn-small"
+                disabled={executing || uncertain}
                 aria-label="Remover prévia de área"
                 onClick={() => setSaved(null)}
               >
@@ -396,9 +505,13 @@ export function GridAreaPreview({
           </>
         ) : (
           <>
+            {abilityContext ? (
+              <strong>{abilityContext.definition.name}</strong>
+            ) : null}
             <label>
               Forma{' '}
               <select
+                disabled={!!abilityContext}
                 aria-label="Forma da área"
                 value={shape}
                 onChange={(event) => {
@@ -423,74 +536,43 @@ export function GridAreaPreview({
                   ? 'Aresta'
                   : 'Comprimento'}{' '}
               <select
+                disabled={!!abilityContext}
                 aria-label="Dimensão da área"
                 value={radiusFeet}
                 onChange={(event) => setRadiusFeet(Number(event.target.value))}
               >
-                {RADII_FEET.map((feet) => (
-                  <option key={feet} value={feet}>
-                    {formatSceneMeters(feet)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {shape === 'line' || shape === 'cylinder' ? (
-              <label>
-                {shape === 'line' ? 'Largura' : 'Altura'}
-                <select
-                  aria-label={
-                    shape === 'line' ? 'Largura da linha' : 'Altura do cilindro'
-                  }
-                  value={shape === 'line' ? lineWidth : height}
-                  onChange={(event) =>
-                    shape === 'line'
-                      ? setLineWidth(Number(event.target.value))
-                      : setHeight(Number(event.target.value))
-                  }
-                >
-                  {RADII_FEET.map((feet) => (
+                {[...new Set<number>([...RADII_FEET, radiusFeet])]
+                  .sort((a, b) => a - b)
+                  .map((feet) => (
                     <option key={feet} value={feet}>
                       {formatSceneMeters(feet)}
                     </option>
                   ))}
+              </select>
+            </label>
+            {shape === 'line' ? (
+              <label>
+                Largura
+                <select
+                  disabled={!!abilityContext}
+                  aria-label="Largura da linha"
+                  value={lineWidth}
+                  onChange={(event) => setLineWidth(Number(event.target.value))}
+                >
+                  {[...new Set<number>([...RADII_FEET, lineWidth])]
+                    .sort((a, b) => a - b)
+                    .map((feet) => (
+                      <option key={feet} value={feet}>
+                        {formatSceneMeters(feet)}
+                      </option>
+                    ))}
                 </select>
               </label>
-            ) : null}
-            {assessmentContext ? (
-              <>
-                <label>
-                  Elevação da origem (m)
-                  <input
-                    aria-label="Elevação da origem em metros"
-                    inputMode="decimal"
-                    value={elevation}
-                    onChange={(event) => setElevation(event.target.value)}
-                  />
-                </label>
-                {shape === 'line' ? (
-                  <label>
-                    Altura da linha
-                    <select
-                      aria-label="Altura vertical da linha"
-                      value={height}
-                      onChange={(event) =>
-                        setHeight(Number(event.target.value))
-                      }
-                    >
-                      {RADII_FEET.map((feet) => (
-                        <option key={feet} value={feet}>
-                          {formatSceneMeters(feet)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-              </>
             ) : null}
             <button
               className="btn btn-small"
               type="button"
-              disabled={!center || !picked || !elevationValid}
+              disabled={!center || !picked}
               onClick={() => {
                 if (!center || !picked || disabled) return;
                 setSaved({
@@ -500,9 +582,7 @@ export function GridAreaPreview({
                   widthFeet: lineWidth,
                   heightFeet: height,
                   angle,
-                  elevationFeet: metersToFeet(
-                    Number(elevation.replace(',', '.')),
-                  ),
+                  ability: abilityContext,
                 });
                 cancel();
               }}
@@ -518,9 +598,6 @@ export function GridAreaPreview({
                 : picked
                   ? 'Clique para ajustar · Esc cancela'
                   : 'Clique no mapa para definir a origem · Esc cancela'}
-              {shape === 'cylinder'
-                ? ` · Altura ${formatSceneMeters(height)} (vista superior)`
-                : ''}
             </span>
           </>
         )}
@@ -528,17 +605,34 @@ export function GridAreaPreview({
           <div className="grid-area-assessment" aria-live="polite">
             {loading ? <p>Conferindo atingidos…</p> : null}
             {error ? <p role="alert">{error}</p> : null}
+            {saved?.ability ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-small"
+                disabled={
+                  executing ||
+                  (!uncertain && (loading || !!error || !fingerprint))
+                }
+                onClick={() => void executeAbility()}
+              >
+                {executing
+                  ? 'Aplicando…'
+                  : uncertain
+                    ? 'Repetir envio'
+                    : `Usar ${saved.ability.definition.name}`}
+              </button>
+            ) : null}
             {!loading && !error && saved ? (
               <>
                 <strong>
                   {readings.filter((row) => row.affected === 'pass').length}{' '}
-                  atingido(s) ·{' '}
-                  {readings.filter((row) => row.affected === 'unknown').length}{' '}
-                  a confirmar
+                  atingido(s)
                 </strong>
                 <ul>
                   {readings
-                    .filter((row) => row.affected !== 'fail')
+                    .filter(
+                      (row) => row.affected !== 'fail' || row.overrideAllowed,
+                    )
                     .map((row) => (
                       <li
                         key={row.combatantId}
@@ -551,21 +645,25 @@ export function GridAreaPreview({
                           ? row.decisionSource === 'master-confirmed'
                             ? 'Atingido · decisão do Mestre'
                             : 'Atingido'
-                          : row.reasons.includes('body-height-missing')
-                            ? 'Cadastre a altura corporal no token'
+                          : row.reasons.includes('different-elevation')
+                            ? 'Outra elevação · fora por padrão'
                             : row.reasons.includes('wall-height-unknown')
                               ? 'Mestre: conferir obstáculo e altura'
                               : 'Mestre: conferir posição e altura'}
-                        {row.affected === 'unknown' ? (
+                        {row.overrideAllowed ? (
                           <span className="grid-area-decisions">
                             <button
                               className="btn btn-small"
                               type="button"
+                              disabled={executing || uncertain}
                               onClick={() =>
                                 setDecisionState({
                                   key: decisionKey,
                                   items: [
-                                    ...decisions,
+                                    ...decisions.filter(
+                                      (item) =>
+                                        item.targetKey !== row.targetKey,
+                                    ),
                                     {
                                       targetKey: row.targetKey,
                                       affected: true,
@@ -579,11 +677,15 @@ export function GridAreaPreview({
                             <button
                               className="btn btn-small"
                               type="button"
+                              disabled={executing || uncertain}
                               onClick={() =>
                                 setDecisionState({
                                   key: decisionKey,
                                   items: [
-                                    ...decisions,
+                                    ...decisions.filter(
+                                      (item) =>
+                                        item.targetKey !== row.targetKey,
+                                    ),
                                     {
                                       targetKey: row.targetKey,
                                       affected: false,
@@ -610,9 +712,10 @@ export function GridAreaPreview({
                     Rever confirmações
                   </button>
                 ) : null}
+
                 <small>
-                  Consulta de alvos, sem dano ou gasto de ações. Cone e linha
-                  miram na horizontal. A altura da linha é definida pelo Mestre.
+                  A área usa a elevação de quem a executa. Outro nível fica fora
+                  por padrão; o Mestre pode incluir por exceção.
                 </small>
               </>
             ) : null}

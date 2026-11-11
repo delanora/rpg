@@ -1,7 +1,9 @@
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
 import { loadCombatById, type CombatActor } from '../combat.service.js';
+import { orderCombatants, type CombatSourced } from '../combat.dto.js';
 import { combatSpatialIndex } from './spatial-distance.service.js';
+import { surfaceElevation } from './elevation.js';
 import { areaMembership, type GridAreaQuery } from './area-membership.js';
 import {
   areaCandidateEvaluation,
@@ -10,22 +12,12 @@ import {
 } from '../../spells/execution/area-evaluation.js';
 import { wallTouchesAreaRay } from './area-query-walls.js';
 
-/** Leitura privada do Mestre; não gasta recursos, não grava alvos e não publica eventos. */
-export async function queryCombatArea(
-  actor: CombatActor,
-  combatId: string,
+/** A mesma avaliação serve à consulta e ao commit da habilidade, dentro de sua transação. */
+export function evaluateCombatArea(
+  combat: CombatSourced,
   query: GridAreaQuery,
+  excludeIds: readonly string[] = [],
 ) {
-  if (actor.role !== 'MASTER')
-    throw new HttpError(
-      'Somente o Mestre consulta os atingidos desta área.',
-      403,
-      'FORBIDDEN',
-    );
-  const combat = await prisma.$transaction(
-    (db) => loadCombatById(combatId, db),
-    { isolationLevel: 'RepeatableRead' },
-  );
   if (combat.status === 'ENDED')
     throw new HttpError('O combate já terminou.', 409, 'CONFLICT');
   const index = combatSpatialIndex(combat);
@@ -34,6 +26,26 @@ export async function queryCombatArea(
       'Seleção espacial exige uma cena com grade.',
       409,
       'AREA_CONTEXT_UNSUPPORTED',
+    );
+  const sourceId =
+    query.casterCombatantId ??
+    orderCombatants(combat.combatants)[combat.currentIndex]?.id;
+  const source = combat.combatants.find((unit) => unit.id === sourceId);
+  const sourceBody = source && index.bodies.get(`combatant:${source.id}`);
+  if (!source || !sourceBody?.position)
+    throw new HttpError(
+      'Posicione no grid quem usará a área.',
+      409,
+      'AREA_SOURCE_REQUIRED',
+    );
+  const level =
+    sourceBody.elevationFeet ??
+    surfaceElevation(index.scene, sourceBody.position, sourceBody.size);
+  if (level === null)
+    throw new HttpError(
+      'Defina a elevação da base do token de origem.',
+      409,
+      'AREA_SOURCE_ELEVATION_REQUIRED',
     );
   if (
     query.origin.xFeet < 0 ||
@@ -46,51 +58,107 @@ export async function queryCombatArea(
       400,
       'VALIDATION_ERROR',
     );
-  const candidates = combat.combatants.map((unit) => {
-    const body = index.bodies.get(`combatant:${unit.id}`) ?? null;
-    const membership = areaMembership(query, index.scene, body);
-    // Paredes 2D não informam altura física. Obstrução relevante exige decisão,
-    // mas uma parede fora dos raios nunca transforma um caso livre em unknown.
-    const propagation =
-      body?.position &&
-      wallTouchesAreaRay(query.origin, body, index.obstacles ?? [])
-        ? 'unknown'
-        : 'pass';
-    const key = unit.characterId
-      ? `character:${unit.characterId}`
-      : `combatant:${unit.id}`;
-    return {
-      combatantId: unit.id,
-      name: unit.name,
-      ...areaCandidateEvaluation({
+  const candidates = combat.combatants
+    .filter((unit) => !excludeIds.includes(unit.id))
+    .map((unit) => {
+      const body = index.bodies.get(`combatant:${unit.id}`) ?? null;
+      const horizontal = areaMembership(query, index.scene, body);
+      const targetLevel = body?.position
+        ? (body.elevationFeet ??
+          surfaceElevation(index.scene, body.position, body.size))
+        : null;
+      const different =
+        targetLevel === null || Math.abs(targetLevel - level) > 1e-6;
+      const blocked =
+        body?.position &&
+        wallTouchesAreaRay(query.origin, body, index.obstacles ?? []);
+      const geometry =
+        horizontal.result === 'pass' && different
+          ? 'unknown'
+          : horizontal.result;
+      const propagation = blocked ? ('fail' as const) : ('pass' as const);
+      const key = unit.characterId
+        ? `character:${unit.characterId}`
+        : `combatant:${unit.id}`;
+      const evaluated = areaCandidateEvaluation({
         targetKey: key,
         kind: unit.characterId ? 'character' : 'combatant',
         id: unit.characterId ?? unit.id,
-        geometry: membership.result,
+        geometry,
         propagation,
         reasons: [
-          ...(membership.result !== 'pass' && membership.reason
-            ? [membership.reason]
+          ...(horizontal.result === 'fail'
+            ? [horizontal.reason ?? 'outside-area']
             : []),
-          ...(propagation === 'unknown' ? ['wall-height-unknown'] : []),
+          ...(different ? ['different-elevation'] : []),
+          ...(blocked ? ['attack-blocking-wall'] : []),
         ],
-      }),
-    };
-  });
-  const outcome = applyAreaDecisions(candidates, query.decisions ?? []);
+      });
+      return {
+        combatantId: unit.id,
+        name: unit.name,
+        elevationFeet: targetLevel,
+        overrideAllowed:
+          horizontal.result === 'pass' &&
+          evaluated.affected === 'unknown' &&
+          different,
+        ...evaluated,
+      };
+    });
+  const explicit = query.decisions ?? [];
+  if (
+    explicit.some(
+      (decision) =>
+        !candidates.some(
+          (row) => row.targetKey === decision.targetKey && row.overrideAllowed,
+        ),
+    )
+  )
+    throw new HttpError(
+      'A exceção só pode incluir ou excluir um alvo em outra elevação, dentro da área e sem parede bloqueando.',
+      409,
+      'AREA_DECISION_INVALID',
+    );
+  // Outra elevação fica FORA sem exigir pop-up; o Mestre só modifica a ocorrência.
+  const defaults = candidates
+    .filter(
+      (row) =>
+        row.affected === 'unknown' &&
+        !explicit.some((item) => item.targetKey === row.targetKey),
+    )
+    .map((row) => ({ targetKey: row.targetKey, affected: false }));
+  const outcome = applyAreaDecisions(candidates, [...defaults, ...explicit]);
   assertAreaDecisionsValid(outcome);
-  const finalCandidates = candidates.map((row) => ({
-    ...row,
-    affected: outcome.missing.includes(row.targetKey)
-      ? ('unknown' as const)
-      : outcome.affectedKeys.includes(row.targetKey)
-        ? ('pass' as const)
-        : ('fail' as const),
-    decisionSource: outcome.provenance.get(row.targetKey) ?? null,
-  }));
   return {
     combatId: combat.id,
     combatVersion: combat.version,
-    candidates: finalCandidates,
+    source: { combatantId: source.id, name: source.name, elevationFeet: level },
+    candidates: candidates.map((row) => ({
+      ...row,
+      affected: outcome.affectedKeys.includes(row.targetKey)
+        ? ('pass' as const)
+        : ('fail' as const),
+      decisionSource: explicit.some((item) => item.targetKey === row.targetKey)
+        ? 'master-confirmed'
+        : row.overrideAllowed
+          ? 'default-elevation'
+          : 'authoritative',
+    })),
   };
+}
+export async function queryCombatArea(
+  actor: CombatActor,
+  combatId: string,
+  query: GridAreaQuery,
+) {
+  if (actor.role !== 'MASTER')
+    throw new HttpError(
+      'Somente o Mestre consulta esta área.',
+      403,
+      'FORBIDDEN',
+    );
+  return prisma.$transaction(
+    async (db) => evaluateCombatArea(await loadCombatById(combatId, db), query),
+    { isolationLevel: 'RepeatableRead' },
+  );
 }

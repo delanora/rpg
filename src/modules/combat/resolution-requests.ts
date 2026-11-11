@@ -30,7 +30,7 @@ import { orderCombatants } from './combat.dto.js';
  */
 
 /** Tipos implementados nesta fase. */
-export type CombatResolutionKind = 'spell-saving-throw' | 'death-saving-throw';
+export type CombatResolutionKind = 'spell-saving-throw' | 'ability-saving-throw' | 'death-saving-throw';
 
 /** Status de um card (só `pending` é emitido hoje; os demais são histórico). */
 export type CombatResolutionStatus =
@@ -277,7 +277,7 @@ export async function resolutionRequestsForCombat(
 
     requests.push({
       id: `spell-save:${row.id}`,
-      kind: 'spell-saving-throw',
+      kind: row.creatureAreaUseId ? 'ability-saving-throw' : 'spell-saving-throw',
       status: 'pending',
       target: {
         kind: target.entity.kind,
@@ -285,7 +285,7 @@ export async function resolutionRequestsForCombat(
         name: target.name,
         ownerUserId: target.ownerUserId,
       },
-      title: spellDisplayName(spellId) ?? definitionLabel(row.definitionId),
+      title: row.sourceLabel ?? spellDisplayName(spellId) ?? definitionLabel(row.definitionId),
       shortDescription: prompt,
       ability: row.ability as AbilityKey,
       phase: row.phase === 'ongoing' ? 'ongoing' : 'initial',

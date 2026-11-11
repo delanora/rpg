@@ -17,12 +17,7 @@ export function wallTouchesAreaRay(
     [(box.minXFeet + box.maxXFeet) / 2, (box.minYFeet + box.maxYFeet) / 2],
   ];
   return walls.some((wall) => {
-    if (
-      (wall.coverLevel ??
-        ((wall.blocksTargeting ?? wall.blocksMovement) ? 'total' : 'none')) !==
-      'total'
-    )
-      return false;
+    if (!(wall.blocksTargeting ?? wall.blocksMovement)) return false;
     const bx = wall.end.xFeet - wall.start.xFeet,
       by = wall.end.yFeet - wall.start.yFeet;
     return targets.some(([x, y]) => {

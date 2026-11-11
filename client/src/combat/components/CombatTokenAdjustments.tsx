@@ -1,3 +1,4 @@
+import type { CreatureAbility } from '../../../../src/modules/shared/creature-abilities';
 import { CombatHeightPanel } from './CombatHeightPanel';
 import { CreatureAbilitiesPanel } from './CreatureAbilitiesPanel';
 import { setSpatialVisibility } from '../grid/gridApi';
@@ -8,8 +9,9 @@ import { applyManualHp, setCombatantSide, removeCombatParticipant } from '../com
 import { MasterEconomyPanel } from './MasterEconomyPanel';
 
 /** Todos os comandos recebem o token inspecionado, sem assumir ou trocar seu turno. */
-export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh, onRun }: {
+export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh, onRun, onPrepareArea }: {
   combat: CombatDto; combatant: CombatantDto; busy: boolean; effectsRefresh: number;
+  onPrepareArea?: (combatantId: string, definition: CreatureAbility) => void;
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [tab, setTab] = useState<'conditions' | 'hp' | 'economy' | 'relation' | 'abilities' | 'height'>('conditions');
@@ -28,7 +30,7 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
     </div>
     <div className="combat-token-menu-body">
       {tab === 'height' ? <CombatHeightPanel key={`${combatant.id}:${combat.version}`} combat={combat} combatant={combatant} busy={busy} onRun={onRun} /> : null}
-      {tab === 'abilities' ? <CreatureAbilitiesPanel combat={combat} combatant={combatant} busy={busy} onRun={onRun} /> : null}
+      {tab === 'abilities' ? <CreatureAbilitiesPanel combat={combat} combatant={combatant} busy={busy} onRun={onRun} onPrepareArea={onPrepareArea} /> : null}
       {tab === 'conditions' ? <MechanicalPanel entity={{ kind: 'combatant', id: combatant.id }}
         refreshVersion={combat.version} effectsRefresh={effectsRefresh} variant="token"
         sourceChoices={combat.combatants.filter(item => !item.missing).map(item => ({

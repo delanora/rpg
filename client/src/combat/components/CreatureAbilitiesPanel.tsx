@@ -10,10 +10,12 @@ export function CreatureAbilitiesPanel({
   combatant,
   busy,
   onRun,
+  onPrepareArea,
 }: {
   combat: CombatDto;
   combatant: CombatantDto;
   busy: boolean;
+  onPrepareArea?: (combatantId:string,ability:NonNullable<CombatantDto['abilities']>[number])=>void;
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function CreatureAbilitiesPanel({
                 ? 'Consulta: não aplica modificadores automaticamente.'
                 : ability.execution === 'assisted'
                   ? 'Assistida: o Mestre resolve os efeitos e testes.'
-                  : `Automática: ${ability.execution === 'dash' ? 'Disparada' : ability.execution === 'dodge' ? 'Esquivar' : 'Desengajar'}.`}
+                  : ability.execution==='area-save-damage'?'Área: selecione direção e confira os alvos no grid.': `Automática: ${ability.execution === 'dash' ? 'Disparada' : ability.execution === 'dodge' ? 'Esquivar' : 'Desengajar'}.`}
             </small>
             {ability.cost !== 'passive' ? (
               <div className="combat-ability-buttons">
@@ -67,9 +69,9 @@ export function CreatureAbilitiesPanel({
                   className="btn btn-small"
                   type="button"
                   disabled={busy || unavailable}
-                  onClick={() => setSelected(ability.id)}
+                  onClick={() => ability.execution==='area-save-damage' ? onPrepareArea?.(combatant.id,ability) : setSelected(ability.id)}
                 >
-                  Usar habilidade
+                  {ability.execution==='area-save-damage'?'Preparar área':'Usar habilidade'}
                 </button>
                 {ability.maxUses !== null && used > 0 ? (
                   <button

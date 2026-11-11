@@ -1,3 +1,4 @@
+import type { CreatureAbility } from '../../types';
 import type { AreaShapeKind } from '../../../../src/modules/spells/execution/area-targeting';
 import type { SpatialPosition } from '../../types';
 
@@ -42,6 +43,7 @@ export function previewPolygon(
   return null;
 }
 export type AreaPreviewRequest = {
+  ability?: {combatantId:string;definition:CreatureAbility};
   id: number;
   shape: PreviewShape;
   origin: SpatialPosition;

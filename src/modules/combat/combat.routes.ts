@@ -1,3 +1,4 @@
+import { previewCreatureArea } from './creature-area.service.js';
 import { gridAreaQuerySchema } from './spatial/area-membership.js';
 import { queryCombatArea } from './spatial/area-query.service.js';
 import { verticalPatchSchema, elevationRequestSchema, elevationDecisionSchema, setVertical, requestElevation, elevationRequestsFor, decideElevation } from './spatial/elevation.service.js';
@@ -8,7 +9,7 @@ import { duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
 import { requestCombatDuel, decideCombatDuel, combatDuelsFor } from './combat.service.js';
 import { hostilityDecisionSchema } from './combat.schema.js';
 import { decideAttackHostility } from './combat.service.js';
-import { creatureAbilityUseSchema } from './combat.schema.js';
+import { creatureAbilityUseSchema, creatureAreaPreviewSchema } from './combat.schema.js';
 import { useCreatureAbility } from './combat.service.js';
 import { addParticipantsSchema, removeParticipantSchema } from './combat.schema.js';
 import { addCombatParticipants, removeCombatParticipant } from './combat.service.js';
@@ -594,4 +595,14 @@ combatRouter.post('/:combatId/spatial/area-query', authenticate, requireRole('MA
  const parsed=gridAreaQuerySchema.safeParse(req.body??{});
  if(!parsed.success){res.status(400).json({error:'VALIDATION_ERROR',issues:parsed.error.flatten()});return;}
  res.json(await queryCombatArea(actorFrom(req),String(req.params.combatId),parsed.data));
+});
+
+/** Consulta privada: o cadastro fornece forma, dimensões e salvaguarda. */
+combatRouter.post('/:combatId/creature-area-preview', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = creatureAreaPreviewSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() });
+    return;
+  }
+  res.json(await previewCreatureArea(actorFrom(req), String(req.params.combatId), parsed.data.combatantId, parsed.data.abilityId, parsed.data.placement));
 });

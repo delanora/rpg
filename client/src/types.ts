@@ -3348,7 +3348,7 @@ export interface EffectsUpdatedPayload {
  * apresentação. O card NÃO contém a regra: ele aponta para a pendência
  * persistida (`PendingEffectSave`) ou para o ciclo de morte real.
  */
-export type CombatResolutionKind = 'spell-saving-throw' | 'death-saving-throw';
+export type CombatResolutionKind = 'spell-saving-throw' | 'ability-saving-throw' | 'death-saving-throw';
 
 export type CombatResolutionStatus =
   | 'pending'

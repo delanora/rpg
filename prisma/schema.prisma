@@ -969,6 +969,7 @@ enum CombatantKind {
 /// aplicação em `startCombat` continua existindo (caminho rápido) e o erro
 /// P2002 do INSERT é traduzido para o mesmo 409.
 model Combat {
+  creatureAreaUses CreatureAreaUse[]
   elevationRequests ElevationRequest[]
   id           String       @id @default(cuid())
   version      Int          @default(0)
@@ -1436,6 +1437,12 @@ model EffectInstance {
 /// duração nem upcasting aqui. `ability`/`definitionId` são fixados pelo
 /// SERVIDOR — o cliente só escolhe caster/alvo (Mestre) e resolve o save.
 model PendingEffectSave {
+  creatureAreaUseId String?
+  creatureAreaUse CreatureAreaUse? @relation(fields: [creatureAreaUseId], references: [id], onDelete: Cascade)
+  sourceLabel String?
+  @@index([creatureAreaUseId, status])
+  @@unique([creatureAreaUseId, targetEntityKind, targetEntityId], map: "pending_area_use_target_key")
+
   id String @id @default(cuid())
 
   /// Identificador MECÂNICO do efeito que será criado na falha (spell.hold-person).
@@ -1819,4 +1826,27 @@ model ElevationRequest {
   createdAt DateTime @default(now())
   @@index([combatId, status])
   @@map("elevation_requests")
+}
+
+model CreatureAreaUse {
+ id String @id @default(cuid())
+ combatId String
+ combat Combat @relation(fields:[combatId],references:[id],onDelete:Cascade)
+ casterEntityKind String
+ casterEntityId String
+ casterLabel String
+ abilityId String
+ label String
+ definition Json
+ placement Json
+ targets Json
+ visibility String @default("public")
+ status String @default("resolving")
+ outcome String?
+ resolutionSnapshot Json?
+ createdAt DateTime @default(now())
+ resolvedAt DateTime?
+ pendingSaves PendingEffectSave[]
+ @@index([combatId,status])
+ @@map("creature_area_uses")
 }

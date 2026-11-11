@@ -59,9 +59,9 @@ check(
   'pass',
 );
 check(
-  'Esfera passa por cima do alvo baixo',
+  'Geometria planar ignora altura da origem',
   hit(query({ kind: 'sphere', radiusFeet: 5 }, 20), body(18, 18, 5)),
-  'fail',
+  'pass',
 );
 check(
   'Altura corporal entra na esfera elevada',
@@ -69,9 +69,9 @@ check(
   'pass',
 );
 check(
-  'Sem altura corporal exige decisão',
+  'Altura corporal não é exigida',
   hit(query({ kind: 'sphere', radiusFeet: 10 }), body(18, 18, null)),
-  'unknown',
+  'pass',
 );
 check(
   'Fora do plano é recusado mesmo sem altura',
@@ -79,12 +79,12 @@ check(
   'fail',
 );
 check(
-  'Cilindro usa base e altura',
+  'Cilindro consulta o footprint',
   hit(
     query({ kind: 'cylinder', radiusFeet: 10, heightFeet: 5 }, 10),
     body(18, 18, 6, 0),
   ),
-  'fail',
+  'pass',
 );
 check(
   'Cilindro intersecta corpo elevado',
@@ -116,12 +116,12 @@ check(
   'pass',
 );
 check(
-  'Linha sem espessura vertical pede decisão',
+  'Linha não exige espessura vertical',
   hit(query({ kind: 'line', lengthFeet: 20, widthFeet: 5 }), body(30, 19)),
-  'unknown',
+  'pass',
 );
 check(
-  'Linha elevada passa acima',
+  'Elevação é decidida pelo serviço, não pela geometria',
   hit(
     {
       ...query({ kind: 'line', lengthFeet: 20, widthFeet: 5 }, 12),
@@ -129,7 +129,7 @@ check(
     },
     body(30, 19),
   ),
-  'fail',
+  'pass',
 );
 check(
   'Cone inclui corpo no volume circular',
@@ -137,9 +137,9 @@ check(
   'pass',
 );
 check(
-  'Cone exclui corpo muito acima',
+  'Cone mede sobreposição planar',
   hit(query({ kind: 'cone', lengthFeet: 20 }), body(30, 19, 5, 30)),
-  'fail',
+  'pass',
 );
 check(
   'Cone exclui lado externo',
@@ -161,13 +161,13 @@ check(
   'pass',
 );
 check(
-  'Desnível sob footprint exige Mestre',
+  'Geometria não exige altura corporal em desnível',
   hit(
     query({ kind: 'sphere', radiusFeet: 10 }),
     body(20, 20, 6, null, 'large'),
     { ...scene, elevationCells: [{ xFeet: 20, yFeet: 20, elevationFeet: 10 }] },
   ),
-  'unknown',
+  'pass',
 );
 const wall = {
   kind: 'wall' as const,
@@ -178,7 +178,7 @@ const wall = {
   coverLevel: 'total' as const,
 };
 check(
-  'Parede interposta exige conferir altura física',
+  'Parede bloqueia ataques no plano',
   wallTouchesAreaRay(origin, body(30, 20), [wall]),
   true,
 );
@@ -188,9 +188,9 @@ check(
   false,
 );
 check(
-  'Meia cobertura não impede propagação',
+  'Configuração de ataques prevalece sobre o grau de cobertura',
   wallTouchesAreaRay(origin, body(30, 20), [{ ...wall, coverLevel: 'half' }]),
-  false,
+  true,
 );
 check(
   'Consulta não aceita alvos enviados pelo cliente',

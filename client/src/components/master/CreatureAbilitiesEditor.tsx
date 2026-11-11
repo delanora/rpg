@@ -1,3 +1,4 @@
+import { CreatureAreaFields, defaultCreatureArea } from './CreatureAreaFields';
 import { useEffect, useRef, useState } from 'react';
 import type { CreatureAbility } from '../../types';
 import {
@@ -189,6 +190,7 @@ export function CreatureAbilitiesEditor({
                   setDraft({
                     ...draft,
                     execution: e.target.value as CreatureAbility['execution'],
+                    ...(e.target.value==='area-save-damage'?{area:draft.area??structuredClone(defaultCreatureArea)}:{}),
                   })
                 }
               >
@@ -202,6 +204,7 @@ export function CreatureAbilitiesEditor({
                 <option value="disengage">Desengajar</option>
                 <option value="dash">Disparada</option>
                 <option value="dodge">Esquivar</option>
+                <option value="area-save-damage">Área com salvaguarda e dano</option>
                 </> : null}
               </select>
             </label>
@@ -225,6 +228,7 @@ export function CreatureAbilitiesEditor({
               </label>
             ) : null}
           </div>
+          {draft.execution==='area-save-damage'?<CreatureAreaFields value={draft.area??defaultCreatureArea} onChange={area=>setDraft({...draft,area})}/>:null}
           {draft.cost === 'reaction' ? (
             <label>
               Gatilho da reação

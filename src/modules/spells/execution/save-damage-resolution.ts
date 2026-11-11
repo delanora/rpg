@@ -1,3 +1,4 @@
+import { loadSaveDamageSource } from '../../combat/save-damage-source.js';
 import type { PendingEffectSave, Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
@@ -11,7 +12,6 @@ import {
   toPendingEffectSaveDto,
   type PendingEffectSaveDto,
 } from '../../effects/pending-effect-saves.js';
-import { spellExecutionDefinition } from './spell-execution-registry.js';
 import {
   parseSpellResolutionSnapshot,
   type SaveDamageCastSnapshot,
@@ -138,9 +138,7 @@ function viewOf(
 }
 
 async function replayedResolution(row: PendingEffectSave): Promise<SaveDamageResolution> {
-  const cast = row.spellCastId
-    ? await prisma.spellCast.findUnique({ where: { id: row.spellCastId } })
-    : null;
+  const cast = row.creatureAreaUseId ? await loadSaveDamageSource(row.creatureAreaUseId,prisma,'creature-ability') : row.spellCastId ? await loadSaveDamageSource(row.spellCastId,prisma) : null;
   const stored = cast ? parseSpellResolutionSnapshot(cast.resolutionSnapshot) : null;
   const castSnapshot = stored?.kind === 'save-damage' ? stored : null;
   const target = entityOf(row.targetEntityKind, row.targetEntityId);
@@ -151,7 +149,7 @@ async function replayedResolution(row: PendingEffectSave): Promise<SaveDamageRes
     label: toPendingEffectSaveDto(row).label,
     dc: row.dc,
     target,
-    castId: row.spellCastId ?? null,
+    castId: row.creatureAreaUseId ?? row.spellCastId ?? null,
     snapshot: viewOf(castSnapshot, target),
     castCompleted: cast ? cast.status !== 'resolving' : true,
     targets: castSnapshot?.targets ?? [],
@@ -190,10 +188,9 @@ export async function resolveSaveDamagePending(
     if (!row) throw new HttpError('Aplicação pendente não encontrada.', 404);
     if (row.status !== 'pending') return replayedResolution(row);
 
-    const cast = row.spellCastId
-      ? await db.spellCast.findUnique({ where: { id: row.spellCastId } })
-      : null;
-    const execution = cast ? spellExecutionDefinition(cast.spellId) : null;
+    const sourceKind=row.creatureAreaUseId?'creature-ability' as const:'spell' as const;
+    const cast=row.creatureAreaUseId?await loadSaveDamageSource(row.creatureAreaUseId,db,sourceKind):row.spellCastId?await loadSaveDamageSource(row.spellCastId,db):null;
+    const execution=cast?.execution;
     const resolution = execution?.resolution;
     if (!cast || !execution || resolution?.kind !== 'save-damage') {
       throw new HttpError(
@@ -225,7 +222,7 @@ export async function resolveSaveDamagePending(
     }
 
     // BARREIRA + roll COMPARTILHADO + aplicação por alvo, na MESMA transação.
-    const finalization = await finalizeSaveDamageCast(cast.id, db, { roll });
+    const finalization = await finalizeSaveDamageCast(cast.id, db, { roll, sourceKind });
     const fresh = await db.pendingEffectSave.findUniqueOrThrow({ where: { id: pendingId } });
     const target = entityOf(row.targetEntityKind, row.targetEntityId);
 

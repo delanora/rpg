@@ -1,5 +1,20 @@
+import { spatialPositionSchema } from '../combat/spatial/spatial.types.js';
+import { areaUnknownDecisionSchema } from '../spells/execution/spell-cast.schema.js';
+import { areaShapeSchema } from '../spells/execution/area-targeting.js';
+import { DAMAGE_TYPES } from './attacks.js';
 import { z } from 'zod';
 
+export const creatureAreaPlacementSchema=z.object({definitionFingerprint:z.string().length(64).optional(),origin:spatialPositionSchema,angle:z.number().finite().min(-Math.PI*2).max(Math.PI*2).default(0),decisions:z.array(areaUnknownDecisionSchema).max(1000).optional()}).strict();
+export type CreatureAreaPlacement=z.infer<typeof creatureAreaPlacementSchema>;
+export const creatureAreaDefinitionSchema=z.object({
+ shape:areaShapeSchema,
+ rangeFeet:z.number().finite().min(0).max(2000).default(0),
+ saveAbility:z.enum(['strength','dexterity','constitution','intelligence','wisdom','charisma']),
+ dc:z.number().int().min(1).max(40),
+ onSuccess:z.enum(['half','none']).default('half'),
+ damage:z.array(z.object({type:z.enum(DAMAGE_TYPES),dice:z.object({count:z.number().int().min(1).max(100),sides:z.union([z.literal(4),z.literal(6),z.literal(8),z.literal(10),z.literal(12),z.literal(20)])}).strict()}).strict()).min(1).max(5),
+}).strict();
+export type CreatureAreaDefinition=z.infer<typeof creatureAreaDefinitionSchema>;
 /** Definição do cadastro; o gasto pertence a cada instância do combate. */
 export const creatureAbilitySchema = z
   .object({
@@ -15,13 +30,15 @@ export const creatureAbilitySchema = z
     description: z.string().trim().max(3000).default(''),
     cost: z.enum(['action', 'bonus-action', 'reaction', 'passive']),
     execution: z
-      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster'])
+      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster', 'area-save-damage'])
       .default('assisted'),
+    area: creatureAreaDefinitionSchema.optional(),
     trigger: z.string().trim().max(500).default(''),
     maxUses: z.number().int().min(1).max(100).nullable().default(null),
   })
   .strict()
   .superRefine((value, ctx) => {
+    if(value.execution==='area-save-damage'&&(!value.area||!['action','bonus-action'].includes(value.cost)))ctx.addIssue({code:'custom',message:'Área com dano exige uma Ação/Ação bônus e forma, CD e dano cadastrados.'});
     if (
       value.cost === 'passive' &&
       (!['assisted', 'war-caster'].includes(value.execution) || value.maxUses !== null)
