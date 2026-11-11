@@ -58,21 +58,8 @@
 
 .dice-stage.is-death-save .dice-head {
   position: relative;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px solid rgba(190, 148, 92, 0.32);
-}
-
-/* Losango de latão no meio do filete. */
-.dice-stage.is-death-save .dice-head::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -3.5px;
-  width: 7px;
-  height: 7px;
-  transform: translateX(-50%) rotate(45deg);
-  background: linear-gradient(135deg, #f0d9a6, #8d6a2f);
-  box-shadow: 0 0 10px rgba(232, 201, 141, 0.4);
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .dice-stage.is-death-save .dice-head h2 {
@@ -267,25 +254,12 @@
 /* --- QUEM ASSISTE vê o MESMO quadro --------------------------------------
    O tabuleiro de quem assiste reaproveita `.dice-stage`/`.dice-ring`, então a
    pele já entra pelas classes acima. Aqui só o cabeçalho próprio dele
-   (`.dice-watch-head`, com retrato e "somente leitura") ganha a régua de latão,
-   o losango central e o texto em cor de osso. */
+   (`.dice-watch-head`, com retrato e "somente leitura") mantém o texto em cor de osso. */
 .dice-stage.is-death-save .dice-watch-head {
   position: relative;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(190, 148, 92, 0.32);
+  padding-bottom: 0;
+  border-bottom: none;
   color: var(--ds-bone);
-}
-
-.dice-stage.is-death-save .dice-watch-head::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -3.5px;
-  width: 6px;
-  height: 6px;
-  transform: translateX(-50%) rotate(45deg);
-  background: linear-gradient(135deg, #f0d9a6, #8d6a2f);
-  box-shadow: 0 0 8px rgba(240, 215, 155, 0.5);
 }
 
 .dice-stage.is-death-save .dice-watch-head .dice-live-text {
@@ -436,6 +410,7 @@
 }
 .dice-stage.is-death-save :is(.dice-head, .dice-watch-head) .death-save-title {
   grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   justify-content: center;
   width: 100%;
@@ -447,16 +422,18 @@
 .dice-stage.is-death-save .death-save-title img {
   display: block;
   width: 100%;
-  max-width: 28rem;
+  max-width: 11.5rem;
   height: auto;
   /* Preserva o arquivo original; aproxima a leitura do latão iluminado do aro. */
   filter: brightness(1.45) saturate(.8) drop-shadow(0 1px 2px #000) drop-shadow(0 0 5px rgba(201, 164, 104, .16));
   user-select: none;
 }
 .dice-stage.is-death-save :is(.dice-head, .dice-watch-head) .dice-head-close {
-  position: absolute;
-  top: 0;
-  right: 0;
+  position: static;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
 }
 /* O trilho da janela respeita a largura útil do overlay no celular. */
 .dice-overlay.is-death-save {
