@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { io, type Socket } from 'socket.io-client';
 import { prisma } from '../config/prisma.js';
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
   const connect = async (token: string, role: 'player' | 'master'): Promise<Socket> => {
     const socket = io(baseUrl, { autoConnect: false, transports: ['websocket'], auth: { token } });
     sockets.push(socket);
-    for (const event of ['combat:updated', 'death:updated', 'sheet:updated', 'dice:roll']) {
+    for (const event of ['combat:updated', 'death:updated', 'sheet:updated', 'dice:roll', 'dice:active']) {
       socket.on(event, (payload: unknown) => events.push({ event, role, payload }));
     }
     await new Promise<void>((resolve, reject) => {
@@ -278,10 +279,30 @@ async function main(): Promise<void> {
           active.data.combat?.currentCombatantId === ownCombatant(active.data.combat)?.id &&
           ownCombatant(active.data.combat)?.deathState?.deathSaves === true &&
           ownCombatant(active.data.combat)?.deathState?.saveTurnKey === null &&
-          active.data.combat?.combatants.find((item: CombatantDto) => item.kind === 'CREATURE')?.hpCurrent === null,
+          !active.data.combat?.combatants.some((item: CombatantDto) => item.kind === 'CREATURE'),
         JSON.stringify({ status: active.status, mode: active.data.combat?.spatial?.mode }),
       );
     }
+
+    // A sentinela vincula o HTTP ao mesmo schema das fixtures antes de qualquer rolagem.
+    const sentinel = await request(`/death/character/${character.id}`, undefined, playerToken);
+    assert.equal(sentinel.status, 200);
+    assert.equal(sentinel.data.death.entity.id, character.id);
+    const announce = {active:true,kind:'death-save',entity,pool:[{sides:20,locked:true}],deathSave:{successes:3,failures:3}};
+    const announced = await request('/dice/active', announce, playerToken);
+    check('DEST01) contadores da apresentação vêm do servidor, não do corpo',announced.status===200&&announced.data.activeRoll.deathSave.successes===0&&announced.data.activeRoll.deathSave.failures===0);
+    await reset(deathStateOf({deathSaves:true,successes:1}));
+    const oneSuccess=await request('/dice/active',announce,playerToken);
+    check('DEST02) abertura seguinte lê o contador atual, sem reiniciar a morte',oneSuccess.data.activeRoll.deathSave.successes===1);
+    await reset(deathStateOf({deathSaves:true}));
+    await request('/dice/active',announce,playerToken);
+    const npcUnit=await prisma.combatant.findFirstOrThrow({where:{combatId:combat.id,creatureId:npc.id}});
+    const forbidden=await request('/dice/active',{...announce,entity:{kind:'combatant',id:npcUnit.id}},playerToken);
+    check('DEST03) jogador não consulta contadores privados de NPC',forbidden.status===403);
+    clearEvents();
+    const privateAnnouncement=await request('/dice/active',{...announce,entity:{kind:'combatant',id:npcUnit.id},private:false},masterToken);
+    await sleep(100);
+    check('DEST04) anúncio de NPC permanece privado mesmo com private=false',privateAnnouncement.status===200&&!eventsOf('dice:active','player').some(event=>event.payload.userId===master.id)&&!JSON.stringify(privateAnnouncement.data).includes(npc.name));
 
     // ---------------------------------------------------------------- SC401
     {
@@ -322,6 +343,13 @@ async function main(): Promise<void> {
         : rollValue >= 10
           ? { revived: false, successes: 1, failures: 0 }
           : { revived: false, successes: 0, failures: 1 };
+    const stateSnapshot=rollResponse.data.roll?.deathSaveState;
+    check('DEST05) HTTP mantém fotografias reais de antes e depois',stateSnapshot?.before.successes===0&&stateSnapshot?.before.failures===0&&stateSnapshot?.after.successes===expected.successes&&stateSnapshot?.after.failures===expected.failures);
+    check('DEST06) projeção não inclui PV, logs ou decisões narrativas',JSON.stringify(Object.keys(stateSnapshot?.after??{}).sort())===JSON.stringify(['dead','failures','stabilized','successes']));
+    const publicRoll=lastOf('dice:roll','player')?.roll;
+    check('DEST07) espectador recebe o mesmo retrato do resultado HTTP',JSON.stringify(publicRoll?.deathSaveState)===JSON.stringify(stateSnapshot));
+    const reconnect=await request('/dice/active',undefined,playerToken);
+    check('DEST08) reconexão conserva contadores e resultado da bandeja',JSON.stringify(reconnect.data.activeRoll?.lastRoll?.deathSaveState)===JSON.stringify(stateSnapshot));
     const playerCombat = lastOf('combat:updated', 'player')?.combat as CombatDto | null;
     const playerDeath = lastOf('death:updated', 'player')?.death as DeathDto | null;
     const playerSheet = lastOf('sheet:updated', 'player');
@@ -372,9 +400,9 @@ async function main(): Promise<void> {
         playerCombat!.spatial.mode === 'grid-2d' &&
         playerCombat!.obstacles.length === 1 &&
         // A visão do JOGADOR tem só o token dele: o NPC é `master-only`
-        // (presente na iniciativa, sem geometria exposta).
+        // (omitido do grid e da iniciativa).
         playerCombat!.combatants.filter((item) => item.kind === 'CHARACTER' && item.spatial?.position).length === 1 &&
-        playerCombat!.combatants.filter((item) => item.kind === 'CREATURE' && item.spatial === null).length === 1,
+        playerCombat!.combatants.filter((item) => item.kind === 'CREATURE').length === 0,
       JSON.stringify({ mode: playerCombat?.spatial.mode, obstacles: playerCombat?.obstacles.length }),
     );
     check(

@@ -1,3 +1,4 @@
+import { DeathFateHeader } from './DeathFateHeader';
 import { DeathSaveTitle } from './DeathSaveTitle';
 import { DeathSaveRoll } from './DeathSaveRoll';
 import { useEffect, useState } from 'react';
@@ -39,6 +40,7 @@ export function DiceDock({ roller }: DiceDockProps) {
     isPrivate,
     phase,
     result,
+    deathSaveBefore,
     error,
     effectOptions,
     selectedEffectModifiers,
@@ -191,6 +193,8 @@ export function DiceDock({ roller }: DiceDockProps) {
                     <Icon name="x" size={16} />
                   </button>
                 </header>
+
+                {deathSave ? <DeathFateHeader before={deathSaveBefore} result={result} settled={settled} /> : null}
 
                 {/* Ring: arena circular onde os dados giram e pousam. */}
                 <div className={rolling ? 'dice-ring is-rolling' : 'dice-ring'}>

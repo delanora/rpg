@@ -1,8 +1,10 @@
+import { fetchDeath } from '../deathApi';
 import { rollAnimationMs } from './rollAnimation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playCrit, playDice } from '../sound';
 import type {
   DiceRollDto,
+  DeathSavePresentation,
   DiceRollKind,
   EffectOptionalModifierDto,
   RollBoardDie,
@@ -35,6 +37,7 @@ export interface DicePoolDie {
  * `dice:roll` com o resultado. Só o autor interage: aqui é tudo leitura.
  */
 export interface RemoteBoard {
+  deathSave?: DeathSavePresentation;
   userId: string;
   actorName: string;
   avatarUrl: string;
@@ -110,6 +113,7 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
   const [isPrivate, setPrivate] = useState(isMaster);
   const [phase, setPhase] = useState<RollPhase>('idle');
   const [result, setResult] = useState<DiceRollDto | null>(null);
+  const [deathSaveBefore, setDeathSaveBefore] = useState<DeathSavePresentation | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Modificadores OPCIONAIS (6.5G) oferecidos pelo SERVIDOR para esta rolagem.
   // Default: desmarcado (o PHB diz "pode" — a escolha é real).
@@ -229,6 +233,7 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
         actorName: payload.actorName,
         avatarUrl: payload.avatarUrl,
         kind: payload.kind,
+        deathSave: payload.deathSave,
         label: payload.label,
         bonus: payload.board.bonus,
         pool: payload.board.pool,
@@ -278,6 +283,7 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
     setDisadvantageValue(false);
     setPrivate(isMaster);
     setResult(null);
+    setDeathSaveBefore(null);
     setPhase('idle');
     setError(null);
   }, [isMaster]);
@@ -299,6 +305,16 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
     },
     [reset],
   );
+
+  // Leitura autorizada do ciclo atual. Nunca adota uma resposta tardia durante o giro.
+  useEffect(() => {
+    if (!open || context?.kind !== 'death-save' || phase !== 'idle' || !context.entity) return;
+    let live = true;
+    fetchDeath(context.entity).then(({ death }) => {
+      if (live) setDeathSaveBefore({ successes: death.successes, failures: death.failures, stabilized: death.stabilized, dead: death.dead });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [open, context?.kind, context?.entity?.kind, context?.entity?.id, phase]);
 
   /**
    * Busca as opções OPCIONAIS quando a bandeja abre para um teste com entidade.
@@ -400,12 +416,13 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
       active: announcing,
       label: context?.label ?? '',
       kind: context?.kind ?? 'free',
+      ...(context?.kind === 'death-save' && context.entity ? {entity:context.entity} : {}),
       private: isPrivateRoll,
       ...board,
     }).catch(() => {
       // A mesa só não acompanha: a rolagem continua funcionando.
     });
-  }, [announcing, isPrivateRoll, context?.label, context?.kind, board]);
+  }, [announcing, isPrivateRoll, context?.label, context?.kind, context?.entity?.kind, context?.entity?.id, board]);
 
   // Fechar a aba no meio da rolagem não pode deixar a faixa presa na mesa (o
   // servidor também limpa pelo disconnect, isto cobre o fechamento normal).
@@ -655,6 +672,7 @@ export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}
     isPrivate,
     phase,
     result,
+    deathSaveBefore,
     error,
     effectOptions,
     selectedEffectModifiers,

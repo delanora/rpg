@@ -4,7 +4,7 @@ import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
 import type { DeathDto } from '../modules/death/death.service.js';
-import type { DiceRollDto, DiceRollKind, RollBoardDto } from '../modules/dice/dice.dto.js';
+import type { DiceRollDto, DiceRollKind, RollBoardDto, DeathSavePresentation } from '../modules/dice/dice.dto.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
@@ -499,6 +499,7 @@ export interface TableRollPayload {
  * marca a rolagem como privada ou sai da mesa no meio dela.
  */
 export interface TableRollActivePayload {
+  deathSave?: DeathSavePresentation;
   active: boolean;
   /** Quem está rolando (o autor é carimbado pelo servidor, a partir do token). */
   userId: string;

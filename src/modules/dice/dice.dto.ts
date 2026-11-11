@@ -72,6 +72,7 @@ export interface RollBoardDto {
  * meio. Não vai para o banco.
  */
 export interface ActiveRollDto {
+  deathSave?: DeathSavePresentation;
   userId: string;
   /** Nome do personagem (ou do usuário, sem ficha) de quem está rolando. */
   actorName: string;
@@ -108,7 +109,16 @@ export interface RollEffectModifiersDto {
   sources: (string | null)[];
 }
 
+/** Contadores confirmados pelo servidor, usados somente na frase da bandeja. */
+export interface DeathSavePresentation {
+  successes: number;
+  failures: number;
+  stabilized: boolean;
+  dead: boolean;
+}
+
 export interface DiceRollDto {
+  deathSaveState?: { before: DeathSavePresentation; after: DeathSavePresentation };
   /** Falha automática de salvaguarda; não houve rolagem. */
   autoFail?: boolean;
   /** Modificadores de efeitos ativos (ausente = nenhum). */

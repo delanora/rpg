@@ -1,3 +1,4 @@
+import { deathSavePresentationOf } from './death-save-presentation.js';
 import { entityHasWarCaster } from '../mechanical/war-caster.service.js';
 import {
   deriveConditionEffects,
@@ -46,7 +47,7 @@ import {
 import { savingThrowBonus } from '../shared/saving-throws.js';
 import { loadEntity } from '../mechanical/mechanical.service.js';
 import { ABILITY_LABELS, type AbilityKey } from '../shared/dnd5e.js';
-import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
+import { applyDeathSave, deathSaveAvailability, getDeathState, type DeathActor } from '../death/death.service.js';
 import { journalSpellSaveOutcome } from '../combat/resolution-requests.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -181,6 +182,7 @@ function activePayload(
     label: string;
     board: RollBoardDto;
     lastRoll: DiceRollDto | null;
+    deathSave?: ActiveRollDto['deathSave'];
   },
 ): TableRollActivePayload {
   return { active, ...who, at: new Date().toISOString() };
@@ -197,7 +199,13 @@ export async function setActiveRoll(
   actor: DiceActor,
   input: ActiveRollInput,
 ): Promise<ActiveRollDto | null> {
-  const isPrivate = Boolean(input.private) && actor.role === 'MASTER';
+  let presentation: Awaited<ReturnType<typeof getDeathState>> | null = null;
+  if (input.active && input.kind === 'death-save') {
+    const own = input.entity ? null : await prisma.character.findUnique({where:{userId:actor.userId},select:{id:true}});
+    const entity = input.entity ?? (own ? {kind:'character' as const,id:own.id} : null);
+    if (entity) presentation = await getDeathState(actor, entity);
+  }
+  const isPrivate = (Boolean(input.private) && actor.role === 'MASTER') || presentation?.kind === 'creature';
   const active = input.active && !isPrivate;
 
   if (!active) {
@@ -222,6 +230,7 @@ export async function setActiveRoll(
     userId: actor.userId,
     actorName: character?.name?.trim() || actor.displayName,
     avatarUrl: character?.avatarUrl ?? '',
+    ...(presentation ? {deathSave:deathSavePresentationOf(presentation.death)} : {}),
     kind: input.kind ?? ('free' as DiceRollKind),
     label: input.label ?? '',
     board: {
@@ -351,6 +360,7 @@ async function rollDeathSave(actor: DiceActor, input: TableRollInput): Promise<D
     throw new HttpError(availability.reason || 'Teste contra a Morte indisponível.', 409, 'CONFLICT');
   }
 
+  const before = deathSavePresentationOf((await getDeathState(deathActor, entity)).death);
   // O dado é do SERVIDOR (crypto) — o cliente não escolhe faces nem resultado.
   const value = rollD20();
   // Anúncio da mesa ("está rolando") só na rolagem PÚBLICA: o Teste privado de
@@ -369,6 +379,7 @@ async function rollDeathSave(actor: DiceActor, input: TableRollInput): Promise<D
     clientId: input.clientId ?? null,
     actorName: availability.name,
     kind: 'death-save',
+    deathSaveState: {before,after:deathSavePresentationOf(outcome)},
     label: input.label?.trim() || 'Teste contra a Morte',
     dice: [{ sides: 20, value }],
     bonus: 0,

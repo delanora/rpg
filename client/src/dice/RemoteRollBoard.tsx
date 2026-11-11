@@ -1,3 +1,4 @@
+import { DeathFateHeader } from './DeathFateHeader';
 import { DeathSaveTitle } from './DeathSaveTitle';
 import { DeathSaveRoll } from './DeathSaveRoll';
 import { useEffect } from 'react';
@@ -85,6 +86,8 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
             <Icon name="x" size={16} />
           </button>
         </header>
+
+        {deathSave ? <DeathFateHeader before={board.deathSave} result={result} settled={settled} /> : null}
 
         {/* Ring: o mesmo tabuleiro do autor, sem os controles. */}
         <div className={rolling ? 'dice-ring is-rolling' : 'dice-ring'}>

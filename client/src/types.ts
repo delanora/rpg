@@ -2947,7 +2947,16 @@ export interface RolledDie {
   dropped?: boolean;
 }
 
+/** Contadores confirmados pelo servidor, usados somente na frase da bandeja. */
+export interface DeathSavePresentation {
+  successes: number;
+  failures: number;
+  stabilized: boolean;
+  dead: boolean;
+}
+
 export interface DiceRollDto {
+  deathSaveState?: { before: DeathSavePresentation; after: DeathSavePresentation };
   autoFail?: boolean;
   id: string;
   /** Dono da rolagem — casa a rolagem com o tabuleiro anunciado. */
@@ -2983,6 +2992,7 @@ export interface TableRollPayload {
  * privada ou sai da mesa no meio dela.
  */
 export interface TableRollActivePayload {
+  deathSave?: DeathSavePresentation;
   active: boolean;
   userId: string;
   actorName: string;
@@ -3022,6 +3032,7 @@ export interface RollBoardDto {
 
 /** Aviso enviado ao servidor quando o tabuleiro muda (abre, mexe no pool, rola). */
 export interface TableRollActiveRequest {
+  entity?: MechanicalEntity;
   active: boolean;
   label?: string;
   kind?: DiceRollKind;

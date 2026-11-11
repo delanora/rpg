@@ -65,6 +65,7 @@ export const tableRollSchema = z.object({
  * avatar) é resolvida no servidor a partir do token.
  */
 export const activeRollSchema = z.object({
+  entity: entitySchema.optional(),
   active: z.boolean(),
   label: z.string().trim().max(80).optional(),
   kind: z.enum(['skill', 'save', 'free', 'death-save']).optional(),
