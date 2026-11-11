@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CombatDto, CombatantDto } from '../../types';
-import { useCreatureAbility } from '../combatApi';
+import { useCreatureAbility, setLegendarySurprise } from '../combatApi';
 import { creatureRechargeLabel, CREATURE_ABILITY_COST_LABELS as ABILITY_COST_LABELS } from '../../../../src/modules/shared/creature-abilities';
 import './creature-abilities.css';
 
@@ -19,12 +19,17 @@ export function CreatureAbilitiesPanel({
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
-  const abilities = combatant.abilities ?? [];
+  const abilities = (combatant.abilities ?? []).filter(ability=>ability.cost!=='legendary');
   const sequence=combatant.turnEconomy.multiattack;
   const sequencePending=Boolean(sequence && sequence.performed<sequence.total);
   if (!combatant.creatureId) return null;
   return (
     <div className="combat-creature-abilities">
+      {combatant.legendary && combatant.legendary.max>0?<article>
+        <strong>Ações Lendárias · {Math.max(0,combatant.legendary.max-combatant.legendary.used)}/{combatant.legendary.max}</strong>
+        <p>Usadas na janela de fim do turno de outro participante. Recuperam no início do próprio turno.</p>
+        {!combatant.legendary.firstTurnEnded?<label><input type="checkbox" checked={combatant.legendary.surprised} disabled={busy} onChange={event=>onRun(()=>setLegendarySurprise(combat,combatant.id,event.target.checked))}/> Surpresa inicial: bloquear opções lendárias até terminar o primeiro turno</label>:null}
+      </article>:null}
       {sequence?<article aria-label="Progresso dos Ataques Múltiplos">
         <strong>{sequence.label} · {sequence.performed}/{sequence.total}</strong>
         <p>{sequencePending?'Resolva os golpes restantes no painel de ataques. Cada golpe escolhe seu alvo.':'Todos os golpes foram resolvidos.'}</p>
@@ -33,7 +38,7 @@ export function CreatureAbilitiesPanel({
       </article>:null}
       {!abilities.length ? (
         <p className="section-note">
-          Nenhuma habilidade especial cadastrada no bestiário.
+          {combatant.legendary?.max ? 'Opções lendárias disponíveis na janela de fim de turno.' : 'Nenhuma habilidade especial cadastrada no bestiário.'}
         </p>
       ) : null}
       {abilities.map((ability) => {

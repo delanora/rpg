@@ -152,6 +152,7 @@ export const economyActionSchema = combatOperationSchema.extend({
  */
 export const nextTurnSchema = combatOperationSchema.extend({
   skipDeathSave: z.boolean().optional(),
+  skipLegendary: z.boolean().optional(),
   extraCombatantId: z.string().min(1).optional(),
 });
 export type NextTurnInput = z.infer<typeof nextTurnSchema>;
@@ -373,3 +374,7 @@ export const duelDecisionSchema = combatOperationSchema.extend({
 export const opportunitySpellSchema = combatOperationSchema.extend({
   spell: z.object({spellId: z.string().min(1).max(64), spellcastingSource: spellcastingSourceRefSchema, castingResource: castingResourceRefSchema.optional()}).strict(),
 }).strict();
+
+export const legendaryUseSchema=combatOperationSchema.extend({windowId:z.string().min(1),combatantId:z.string().min(1),abilityId:z.string().min(1),targetCombatantId:z.string().min(1).optional(),confirmed:z.boolean().default(false)}).strict();
+export const legendaryPassSchema=combatOperationSchema.extend({windowId:z.string().min(1),combatantId:z.string().min(1)}).strict();
+export const legendarySurpriseSchema=combatOperationSchema.extend({combatantId:z.string().min(1),surprised:z.boolean()}).strict();

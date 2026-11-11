@@ -54,6 +54,7 @@ const creatureFields = z.object({
 
   attacks: z.array(attackSchema).max(100),
   abilities: creatureAbilitiesSchema,
+  legendaryActionsMax: z.number().int().min(0).max(20),
   /**
    * PERFIL DE CONJURAÇÃO do statblock (6.6B): `{ ability?, saveDc?, attackBonus? }`.
    * Valores explícitos são a autoridade da criatura — a CD NÃO é recalculada por

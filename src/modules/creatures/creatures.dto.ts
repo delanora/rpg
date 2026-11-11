@@ -99,6 +99,7 @@ export interface CreatureDto {
   imageUrl: string;
   tokenImages: string[];
   abilities: CreatureAbility[];
+  legendaryActionsMax: number;
 
   description: string;
   version: number;
@@ -200,6 +201,7 @@ export function toCreatureDto(
     imageUrl: creature.imageUrl,
     tokenImages: creature.tokenImages,
     abilities: creatureAbilitiesOf(creature.abilities),
+    legendaryActionsMax: creature.legendaryActionsMax,
     description: creature.description,
     version: creature.version,
     createdAt: creature.createdAt.toISOString(),

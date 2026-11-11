@@ -28,18 +28,24 @@ export const creatureAbilitySchema = z
       ),
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(3000).default(''),
-    cost: z.enum(['action', 'bonus-action', 'reaction', 'passive']),
+    cost: z.enum(['action', 'bonus-action', 'reaction', 'passive', 'legendary']),
     execution: z
-      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster', 'area-save-damage', 'multiattack'])
+      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster', 'area-save-damage', 'multiattack', 'legendary-attack'])
       .default('assisted'),
     area: creatureAreaDefinitionSchema.optional(),
     multiattack: z.array(z.object({attackId:z.string().min(1).max(160),count:z.number().int().min(1).max(20)}).strict()).min(1,'Selecione os ataques que compõem a habilidade.').max(20,'A composição aceita até 20 tipos de ataque.').optional(),
+    legendaryCost: z.number().int().min(1).max(20).optional(),
+    legendaryAttackId: z.string().min(1).max(160).optional(),
     trigger: z.string().trim().max(500).default(''),
     recharge: z.object({ minimum: z.number().int().min(1).max(6) }).strict().optional(),
     maxUses: z.number().int().min(1).max(100).nullable().default(null),
   })
   .strict()
   .superRefine((value, ctx) => {
+    if(value.cost==='legendary' && (!value.legendaryCost || !['assisted','legendary-attack'].includes(value.execution) || value.maxUses!==null || value.recharge))
+      ctx.addIssue({code:'custom',message:'Ação Lendária exige custo no saldo próprio e execução assistida ou um ataque cadastrado.'});
+    if(value.execution==='legendary-attack' && (value.cost!=='legendary'||!value.legendaryAttackId))
+      ctx.addIssue({code:'custom',message:'Selecione o ataque da Ação Lendária.'});
     if (value.execution === 'multiattack') {
       const entries=value.multiattack ?? [];
       const total=entries.reduce((sum,item)=>sum+item.count,0);
@@ -92,6 +98,7 @@ export const CREATURE_ABILITY_COST_LABELS = {
   'bonus-action': 'Ação bônus',
   reaction: 'Reação',
   passive: 'Passiva',
+  legendary: 'Ação Lendária',
 } as const;
 
 /** Uma tentativa por habilidade gasta; a transação do turno controla a ocorrência. */

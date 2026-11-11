@@ -795,6 +795,8 @@ model SceneOperation {
 }
 
 model Creature {
+  /// Limite do statblock; o gasto pertence à instância do combate.
+  legendaryActionsMax Int @default(0)
   /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
   mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
 
@@ -969,6 +971,8 @@ enum CombatantKind {
 /// aplicação em `startCombat` continua existindo (caminho rápido) e o erro
 /// P2002 do INSERT é traduzido para o mesmo 409.
 model Combat {
+  /// Fronteira de fim de turno; não ativa o próximo enquanto o Mestre decide.
+  legendaryWindow Json?
   creatureAreaUses CreatureAreaUse[]
   elevationRequests ElevationRequest[]
   id           String       @id @default(cuid())
@@ -1025,6 +1029,8 @@ model Combat {
 }
 
 model Combatant {
+  /// Gasto lendário, surpresa inicial e primeiro turno encerrado desta cópia.
+  legendaryState Json @default("{}")
   elevationRequests ElevationRequest[]
   /// Altura da base e altura corporal em pés; null mantém arbitragem explícita.
   elevationFeet Float?

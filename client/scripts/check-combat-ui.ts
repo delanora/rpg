@@ -3714,7 +3714,7 @@ check(
       combatants: [moverOf({ turnEconomy: { movementBudget: 9, movementUsed: 9 } })],
     }).combatantId === null &&
     combatTrackerSource.includes('movementAuthorityOf({') &&
-    combatTrackerSource.includes('movement={movementAuthority}') &&
+    combatTrackerSource.includes('movement={combat.legendaryPause ? undefined : movementAuthority}') &&
     movementGridSource.includes('if (movableUnitId !== combatantId) return;')
 );
 check(

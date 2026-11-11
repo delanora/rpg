@@ -1,0 +1,11 @@
+.legendary-actions-panel { width: min(100%, 42rem); padding: .9rem; border: 1px solid var(--gold-deep); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.legendary-actions-panel h3 { margin: 0 0 .4rem; color: var(--gold-bright); display: flex; align-items: center; gap: .4rem; }
+.legendary-actions-panel p { margin: .35rem 0; font-size: var(--text-small); }
+.legendary-choices { display: grid; gap: .65rem; max-height: min(48vh, 28rem); overflow-y: auto; margin: .65rem 0; }
+.legendary-choice { min-width: 0; padding: .75rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.legendary-choice header { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.legendary-choice header span { color: var(--gold-bright); font-size: var(--text-small); }
+.legendary-choice label { display: grid; gap: .25rem; margin: .5rem 0; font-size: var(--text-small); }
+.legendary-choice select { width: 100%; min-width: 0; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem; }
+.legendary-choice .legendary-confirm { display: flex; align-items: flex-start; gap: .4rem; }
+.legendary-buttons { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .5rem; }

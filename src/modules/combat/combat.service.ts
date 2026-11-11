@@ -1,3 +1,5 @@
+import { legendaryCandidates } from './legendary.service.js';
+import { legendaryStateOf, legendaryWindowOf, assertLegendaryTurnOpen } from '../shared/legendary-actions.js';
 import { beginMultiattack, recordMultiattack } from '../shared/multiattack.js';
 import { beginCreatureAreaUse, publishCreatureAreaUse } from './creature-area.service.js';
 import { obstacleCoverProvider } from './spatial/obstacle-cover.js';
@@ -33,7 +35,7 @@ import type {
   EconomyOverrideInput,
   NextTurnInput,
 } from './combat.schema.js';
-import type { CombatStatus, Prisma, Role } from '@prisma/client';
+import { Prisma, type CombatStatus, type Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
 import { inventoryListSchema } from '../characters/characters.schema.js';
@@ -389,6 +391,7 @@ function autoSkippedAtZero(combatant: CombatantSourced): boolean {
 }
 
 function requireOwnTurn(combat: CombatSourced, combatant: CombatantSourced): void {
+  assertLegendaryTurnOpen(combat.legendaryWindow);
   if (orderCombatants(combat.combatants)[combat.currentIndex]?.id !== combatant.id) {
     throw new HttpError('Esta ação exige o turno do combatente. O Mestre pode corrigir a ordem explicitamente.', 403);
   }
@@ -456,6 +459,8 @@ async function rechargeAtTurnStart(
   unit: CombatantSourced,
 ) {
   if (!unit.creature || unit.character || combatantDeathState(unit).dead) return;
+  const legendary=legendaryStateOf(unit.legendaryState);
+  if(legendary.used>0)await db.combatant.update({where:{id:unit.id},data:{legendaryState:{...legendary,used:0}}});
   const { uses, results } = rechargeCreatureAbilities(unit.creature.abilities, unit.abilityUses, () => rollDie(6));
   if (!results.length) return;
   await db.combatant.update({ where: { id: unit.id }, data: { abilityUses: uses } });
@@ -494,11 +499,22 @@ export async function appendConcentrationLog(
 }
 
 /** Uma única versão serializa turno, consumo, ataques e overrides no combate. */
-async function runCombatOperation<T extends { combat: CombatDto }>(
+function combatOperationFingerprint(actor:CombatActor,input:CombatOperationInput,type:string):string {
+ return createHash('sha256').update(JSON.stringify({type,actor:actor.userId,input})).digest('hex');
+}
+/** Replay antes de consultar o cadastro, inclusive quando a definição mudou. */
+export async function replayCombatOperation<T extends {combat:CombatDto}>(actor:CombatActor,input:CombatOperationInput,type:string):Promise<(T & {replayed:true})|null> {
+ const previous=await prisma.combatOperation.findUnique({where:{combatId_operationId:{combatId:input.combatId,operationId:input.operationId}}});
+ if(!previous)return null;
+ if(previous.fingerprint!==combatOperationFingerprint(actor,input,type))throw new HttpError('operationId reutilizado com outro payload/autor.',409,'IDEMPOTENCY_KEY_REUSED');
+ return {...previous.snapshot as unknown as T,replayed:true};
+}
+
+export async function runCombatOperation<T extends { combat: CombatDto }>(
   actor: CombatActor, input: CombatOperationInput, type: string,
   apply: (db: Prisma.TransactionClient, combat: CombatSourced) => Promise<T>,
 ): Promise<T & { replayed: boolean }> {
-  const fingerprint = createHash('sha256').update(JSON.stringify({ type, actor: actor.userId, input })).digest('hex');
+  const fingerprint = combatOperationFingerprint(actor,input,type);
   const replay = (operation: { fingerprint: string; snapshot: unknown }) => {
     if (operation.fingerprint !== fingerprint) throw new HttpError('operationId reutilizado com outro payload/autor.', 409, 'IDEMPOTENCY_KEY_REUSED');
     return { ...(operation.snapshot as T), replayed: true };
@@ -517,6 +533,7 @@ async function runCombatOperation<T extends { combat: CombatDto }>(
       });
       if (changed.count !== 1) throw new HttpError('Combate mudou ou não está ativo. Atualize e tente novamente.', 409, 'CONFLICT');
       const combat = await loadCombatById(input.combatId, db);
+      if (!['next-turn','legendary-use','legendary-pass','legendary-config','hostility-decision','duel-decision'].includes(type)) assertLegendaryTurnOpen(combat.legendaryWindow);
       const response = await apply(db, combat);
       await db.combatOperation.create({ data: {
         combatId: combat.id, operationId: input.operationId, fingerprint,
@@ -1055,6 +1072,7 @@ export async function rollInitiative(actor: CombatActor, combatantId?: string): 
     const locked = await db.combat.updateMany({ where: { id: selectedCombat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
     if (!locked.count) throw new HttpError('O combate já foi encerrado.', 409);
     const combat = await loadCombatById(selectedCombat.id, db);
+    assertLegendaryTurnOpen(combat.legendaryWindow);
     const combatant = combatantId ? combat.combatants.find(item => item.id === combatantId) : combat.combatants.find(item => item.ownerUserId === actor.userId);
     if (!combatant) throw new HttpError('Combatente não encontrado.', combatantId ? 404 : 403);
     if (actor.role !== 'MASTER' && combatant.ownerUserId !== actor.userId) throw new HttpError('Você só pode rolar a sua própria iniciativa.', 403);
@@ -1096,7 +1114,7 @@ import { processDurationExpirations } from '../spells/execution/effect-duration.
 
 export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promise<CombatDto> {
   if (input.extraCombatantId) requireMaster(actor);
-  const pending = await prisma.combat.findUnique({ where: { id: input.combatId }, select: { status: true } });
+  const pending = await prisma.combat.findUnique({ where: { id: input.combatId }, select: { status: true, legendaryWindow: true } });
   if (pending?.status === 'PENDING_INITIATIVE' && actor.role !== 'MASTER') throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
   // 6.6H: o FIM do turno atual abre as salvaguardas repetidas dos efeitos que
   // atingem quem está encerrando. Enquanto alguma continuar pendente o turno
@@ -1148,7 +1166,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         'MOVEMENT_REACTION_PENDING',
       );
     }
-    const triggers = await openEndOfTurnTriggers(input.combatId);
+    const triggers = pending.legendaryWindow ? {blocked:false} : await openEndOfTurnTriggers(input.combatId);
     if (triggers.blocked) {
       throw new HttpError(
         'Resolva ou recuse as salvaguardas de fim de turno antes de avançar.',
@@ -1161,6 +1179,8 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
   const expiredTargets: Parameters<typeof publishEffects>[0][number][] = [];
   const response = await runCombatOperation(actor, input, 'next-turn', async (db, combat) => {
     const ordered = orderCombatants(combat.combatants);
+    const window=legendaryWindowOf(combat.legendaryWindow);
+    if(window && actor.role!=='MASTER')throw new HttpError('Aguarde o Mestre concluir o fim do turno.',409,'LEGENDARY_WINDOW_PENDING');
     const outgoing = ordered[combat.currentIndex];
     if (actor.role !== 'MASTER' && outgoing?.ownerUserId !== actor.userId) {
       throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
@@ -1171,7 +1191,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     // (`skipDeathSave`), e o override fica registrado, sem inventar resultado.
     const currentKey = turnKey(combat.id, combat.round, combat.currentIndex);
     const mustRollBeforeEnding = deathSaveRequiredThisTurn(combatantDeathState(outgoing), currentKey);
-    if (mustRollBeforeEnding) {
+    if (mustRollBeforeEnding && !window) {
       if (actor.role !== 'MASTER') {
         throw new HttpError(
           'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.',
@@ -1203,12 +1223,13 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     // A regra pura vive em `turn-order.ts`; aqui só aplicamos os hooks.
     // Sempre no MÁXIMO uma volta — `null` = fallback reportável.
     // ------------------------------------------------------------------
+    const extraCombatantId=window?.extraCombatantId??input.extraCombatantId;
     const resumeIndex = combat.extraTurnResumeAfterId
       ? ordered.findIndex(c => c.id === combat.extraTurnResumeAfterId) : -1;
-    const extraIndex = input.extraCombatantId ? ordered.findIndex(c => c.id === input.extraCombatantId) : -1;
-    if (input.extraCombatantId && (actor.role !== 'MASTER' || combat.extraTurnResumeAfterId || extraIndex < 0 || extraIndex >= combat.currentIndex || !ordered[extraIndex].firstTurnPending || !combatantReceivesTurn(ordered[extraIndex])))
+    const extraIndex = extraCombatantId ? ordered.findIndex(c => c.id === extraCombatantId) : -1;
+    if (extraCombatantId && (actor.role !== 'MASTER' || combat.extraTurnResumeAfterId || extraIndex < 0 || extraIndex >= combat.currentIndex || !ordered[extraIndex].firstTurnPending || !combatantReceivesTurn(ordered[extraIndex])))
       throw new HttpError('Só o Mestre pode antecipar um reforço que aguarda seu primeiro turno na próxima rodada.', 409, 'CONFLICT');
-    const plan = input.extraCombatantId
+    const plan = extraCombatantId
       ? { index: extraIndex, rounds: 0, skipped: [] as number[] }
       : planNextTurn(ordered.length, resumeIndex >= 0 ? resumeIndex : combat.currentIndex,
           (position) => combatantReceivesTurn(ordered[position]));
@@ -1224,6 +1245,16 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     const index = plan.index;
     const round = combat.round + plan.rounds;
     const skipped = plan.skipped.map((position) => ordered[position]).filter(c => c.initiative !== null);
+    const incoming = ordered[index];
+
+    const pendingLegendary=window ? legendaryCandidates(combat,window.outgoingId).filter(unit=>window.candidateIds.includes(unit.id)&&!window.decidedIds.includes(unit.id)) : legendaryCandidates(combat,outgoing.id);
+    if(window && input.skipLegendary!==true && pendingLegendary.length) return {combat:toCombatDto(combat,actor.role),advanced:false};
+    if(!window && pendingLegendary.length) {
+      const boundary={id:randomUUID(),turnSequence:combat.turnSequence??0,outgoingId:outgoing.id,candidateIds:pendingLegendary.map(unit=>unit.id),decidedIds:[],...(extraCombatantId?{extraCombatantId}:{})};
+      await db.combatant.update({where:{id:outgoing.id},data:{turnEconomy:onTurnEnd(economyOf(outgoing.turnEconomy)),...(outgoing.creature?{legendaryState:{...legendaryStateOf(outgoing.legendaryState),firstTurnEnded:true}}:{})}});
+      await db.combat.update({where:{id:combat.id},data:{legendaryWindow:boundary}});
+      return {combat:toCombatDto(await loadCombatById(combat.id,db),actor.role),advanced:false};
+    }
     // Hooks de início de turno dos pulados: estabilizado a 0 processa o início
     // (sem Death Save) e o restante do turno é descartado; morto não roda nada.
     for (const candidate of skipped) {
@@ -1231,13 +1262,11 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         await onTurnStartDeath(deathEntityOf(candidate), db);
       }
     }
-    const incoming = ordered[index];
-
-    await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)) } });
+    await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)),...(outgoing.creature?{legendaryState:{...legendaryStateOf(outgoing.legendaryState),firstTurnEnded:true}}:{}) } });
     // 6.6D: cada ativação REAL de turno incrementa a identidade UMA vez.
     await db.combat.update({
       where: { id: combat.id },
-      data: { currentIndex: index, round, turnSequence: { increment: 1 }, extraTurnResumeAfterId: input.extraCombatantId ? outgoing.id : null },
+      data: { legendaryWindow: Prisma.DbNull, currentIndex: index, round, turnSequence: { increment: 1 }, extraTurnResumeAfterId: extraCombatantId ? outgoing.id : null },
     });
     // O turno de quem está morto (ou com morte pendente) NÃO concede Ação,
     // Ação Bônus, Reação nem Movimento — o registro segue no combate até o
@@ -1272,17 +1301,17 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         { private: skipped.some((item) => hasPrivateMechanicalState(item.kind)) },
       );
     }
-    if (input.extraCombatantId) {
+    if (extraCombatantId) {
       await appendEconomyLog(db, combat, incoming, 'Mestre antecipou o primeiro turno deste reforço; a ordem normal será retomada em seguida.', 'turn-extra', {private: incoming.kind !== 'CHARACTER' && incoming.spatialVisibility === 'master-only'});
     }
     // 6.6H: expirações devidas NESTA nova posição do clock são processadas
     // antes de publicar o turno — um Bless expirado já não concede bônus.
     const expirations = await processDurationExpirations(db, combat.id);
     expiredTargets.push(...expirations.targets);
-    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role), advanced:true };
   });
   if (expiredTargets.length > 0) await publishEffects(expiredTargets);
-  if (!response.replayed) emitTurn(response.combat);
+  if (!response.replayed && response.advanced!==false) emitTurn(response.combat);
   return response.combat;
 }
 
@@ -1536,6 +1565,8 @@ export interface AttackResolutionOptions<TReaction>
    * próprio turno. Autoridade INTERNA do domínio — jamais campo do cliente.
    */
   forcedReaction?: boolean;
+  legendaryAction?: boolean;
+  operationInput?: CombatOperationInput;
 }
 
 export async function resolveAttack<TReaction = never>(
@@ -1557,7 +1588,7 @@ export async function resolveAttack<TReaction = never>(
     combat: CombatDto;
     result: AttackResolvedPayload;
     reaction?: TReaction;
-  }>(actor, input, options.operationType ?? 'attack', async (db, combat) => {
+  }>(actor, options.operationInput ?? input, options.operationType ?? 'attack', async (db, combat) => {
     // Validação da janela de Reação ANTES de gastar/rolar qualquer coisa.
     if (options.beforeAttack) await options.beforeAttack({ db, combat });
 
@@ -1666,9 +1697,11 @@ export async function resolveAttack<TReaction = never>(
       );
     }
     const longRangeDisadvantage = rangeInfo.status === 'long-range';
-    if (input.multiattackId && (options.forcedReaction || input.prepared || attacker.character || attack.id.startsWith('offhand:') || input.attackActionId))
+    if (input.multiattackId && (options.forcedReaction || options.legendaryAction || input.prepared || attacker.character || attack.id.startsWith('offhand:') || input.attackActionId))
       throw new HttpError('Ataques Múltiplos não é Reação, ação preparada ou Attack Action.',400,'MULTIATTACK_INVALID_CONTEXT');
-    if (options.forcedReaction) {
+    if (options.legendaryAction) {
+      // Custo próprio e janela já validados, na mesma transação, por beforeAttack.
+    } else if (options.forcedReaction) {
       // 6.6L.3.1 — ATAQUE DE OPORTUNIDADE: UMA Reação, UM ataque corpo a corpo.
       // Sem Ação/Ação Bônus, sem `recordAttack` (não é Attack Action, então
       // Extra Attack NÃO multiplica) e sem exigir o próprio turno.
@@ -2539,7 +2572,7 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
   await prisma.$transaction(async (db) => {
     await db.combat.update({
       where: { id: combat.id },
-      data: { status: 'ENDED', endedAt: new Date(), version: { increment: 1 } },
+      data: { status: 'ENDED', legendaryWindow: Prisma.DbNull, endedAt: new Date(), version: { increment: 1 } },
     });
     await db.combatDuel.updateMany({ where: { combatId: combat.id, status: { in: ['pending', 'active'] } }, data: { status: 'ended' } });
     await db.combatHostilityPrompt.updateMany({ where: { combatId: combat.id, status: 'pending' }, data: { status: 'cancelled' } });
@@ -2922,6 +2955,7 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
     }
     const ability = creatureAbilitiesOf(unit.creature.abilities).find(item => item.id === input.abilityId);
     if (!ability) throw new HttpError('Habilidade não encontrada no cadastro.', 404);
+    if (ability.cost === 'legendary') throw new HttpError('Use a janela de fim de turno para esta Ação Lendária.',409,'LEGENDARY_WINDOW_REQUIRED');
     if (ability.cost === 'passive') throw new HttpError('Característica passiva é apenas consultiva.', 400);
     const uses = creatureAbilityUsesOf(unit.abilityUses);
     if (input.mode === 'restore') {

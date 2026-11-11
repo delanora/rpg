@@ -1,3 +1,4 @@
+import { assertLegendaryTurnOpen } from '../../shared/legendary-actions.js';
 import { clearSpecificHostility } from '../hostility.js';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -166,6 +167,7 @@ export async function runSpatialOperation<T extends { combat: CombatDto }>(
         throw new HttpError('Combate mudou ou não está ativo. Atualize e tente novamente.', 409, 'CONFLICT');
       }
       const combat = await loadCombatById(input.combatId, db);
+        if(type!=='combatant-spatial-visibility')assertLegendaryTurnOpen(combat.legendaryWindow);
       const response = await apply(db, combat);
       await db.combatOperation.create({
         data: {

@@ -161,6 +161,7 @@ async function combatContext(
   const ordered = orderCombatants(combat.combatants);
   const inOwnTurn =
     combat.status === 'ACTIVE' &&
+    !combat.legendaryWindow &&
     combatantId !== null &&
     ordered[combat.currentIndex]?.id === combatantId;
   return {

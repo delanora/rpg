@@ -747,7 +747,11 @@ export function CreatureEditor({
         ) : null}
 
         {step === 2 ? <Section title="Habilidades especiais" icon="sparkle">
-          <CreatureAbilitiesEditor attacks={creature.attacks ?? []} abilities={creature.abilities ?? []} onChange={abilities => onPatch({ abilities })} onEditingChange={setAbilityEditing} />
+          <label className="field">Limite de Ações Lendárias por ciclo
+            <input aria-label="Limite de Ações Lendárias" type="number" min={0} max={20} value={creature.legendaryActionsMax??0} onChange={event=>onPatch({legendaryActionsMax:Number(event.target.value)})}/>
+            <small>0 = sem Ações Lendárias. O saldo se recupera no início do turno da criatura.</small>
+          </label>
+          <CreatureAbilitiesEditor legendaryActionsMax={creature.legendaryActionsMax??0} attacks={creature.attacks ?? []} abilities={creature.abilities ?? []} onChange={abilities => onPatch({ abilities })} onEditingChange={setAbilityEditing} />
         </Section> : null}
 
         {step === 4 && !creating && creature.kind === 'NPC' ? (

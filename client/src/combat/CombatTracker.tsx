@@ -1,3 +1,4 @@
+import { LegendaryActionsPanel } from './components/LegendaryActionsPanel';
 import type { AreaPreviewRequest } from './grid/areaPreviewGeometry';
 import { ElevationRequests } from './components/ElevationRequests';
 import { CreatureAbilitiesPanel } from './components/CreatureAbilitiesPanel';
@@ -313,7 +314,7 @@ export function CombatTracker({
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
-  const isMyTurn = Boolean(current && current.ownerUserId === user.id);
+  const isMyTurn = Boolean(!combat.legendaryPause && current && current.ownerUserId === user.id);
 
   // Quem controla o turno AGORA (derivação única — ver `turnControl.ts`).
   const controlsCurrent = currentUserControlsCombatant(current, user);
@@ -443,7 +444,7 @@ export function CombatTracker({
     isMaster ? masterAttackerId : '',
   );
   const masterAttackerCombatant = isMaster ? actingCombatant : null;
-  const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
+  const ownTurn = Boolean(!combat.legendaryPause && actingCombatant && actingCombatant.id === combat.currentCombatantId);
 
   /**
    * 6.6M.3 — QUEM PODE MOVER no grid agora (derivação única). O Mestre usa o
@@ -1460,7 +1461,7 @@ export function CombatTracker({
               isMaster={isMaster}
               busy={busy}
               relationReferenceId={isMaster ? currentId : myCombatant?.id}
-              movement={movementAuthority}
+              movement={combat.legendaryPause ? undefined : movementAuthority}
               onCombatChange={onCombatChange}
               onError={onError}
             />
@@ -1523,6 +1524,7 @@ export function CombatTracker({
 
       {isMaster ? <ElevationRequests combat={combat} onCombatChange={onCombatChange} /> : null}
 
+      {combat.legendaryPause && !isMaster?<p className="section-note" role="status">Aguardando o Mestre concluir o fim do turno.</p>:null}
       {/* Toast central (2 s, sem clique, sem bloquear a interface). */}
       <TurnToast alert={turnAlert} />
 
@@ -1558,7 +1560,7 @@ export function CombatTracker({
                 <button
                   type="button"
                   className="btn btn-primary btn-small combat-next-turn"
-                  disabled={busy}
+                  disabled={busy || Boolean(combat.legendaryPause)}
                   onClick={() => void endTurn()}
                 >
                   Próximo turno →
@@ -1593,9 +1595,9 @@ export function CombatTracker({
             isMaster={isMaster}
             busy={busy}
             relationReferenceId={isMaster ? currentId : myCombatant?.id}
-            movement={movementAuthority}
+            movement={combat.legendaryPause ? undefined : movementAuthority}
             targeting={
-              gridTargetingActive
+              !combat.legendaryPause && gridTargetingActive
                 ? {
                     active: true,
                     targetableIds: gridTargetIds,
@@ -1657,7 +1659,7 @@ export function CombatTracker({
           />
         }
         context={
-          reactionOpportunity ? (
+          isMaster && combat.legendaryWindow ? <LegendaryActionsPanel combat={combat} busy={busy} onRun={action=>void run(action)}/> : reactionOpportunity ? (
             <>
 
             {/* Janela de Reação: SÓ com oportunidade concreta para este usuário. */}

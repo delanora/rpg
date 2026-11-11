@@ -13,9 +13,11 @@ export function CreatureAbilitiesEditor({
   onChange,
   onEditingChange,
   attacks = [],
+  legendaryActionsMax = 0,
 }: {
   abilities: CreatureAbility[];
   attacks?: {id:string;name:string}[];
+  legendaryActionsMax?: number;
   onChange: (value: CreatureAbility[]) => void;
   onEditingChange: (editing: boolean) => void;
 }) {
@@ -40,6 +42,8 @@ export function CreatureAbilitiesEditor({
     if(parsed.data.execution==='multiattack' && parsed.data.multiattack?.some(item=>!attacks.some(attack=>attack.id===item.attackId))) {
       setError('Selecione ataques existentes no cadastro da criatura.'); return;
     }
+    if(parsed.data.cost==='legendary' && (parsed.data.legendaryCost??Infinity)>legendaryActionsMax) {setError('Configure no cadastro um limite lendário suficiente para esta opção.');return;}
+    if(parsed.data.execution==='legendary-attack'&&!attacks.some(attack=>attack.id===parsed.data.legendaryAttackId)) {setError('Selecione um ataque cadastrado.');return;}
     onChange(
       abilities.some((item) => item.id === parsed.data.id)
         ? abilities.map((item) =>
@@ -136,7 +140,7 @@ export function CreatureAbilitiesEditor({
                   : 'Assistida'
                 : 'Automática'}{' '}
               ·{' '}
-              {item.recharge ? creatureRechargeLabel(item.recharge.minimum) : item.maxUses === null
+              {item.cost==='legendary'?`Custo ${item.legendaryCost} do saldo lendário`:item.recharge ? creatureRechargeLabel(item.recharge.minimum) : item.maxUses === null
                 ? 'Sem limite de usos'
                 : `${item.maxUses} usos por combate`}
             </p>
@@ -176,9 +180,10 @@ export function CreatureAbilitiesEditor({
                     cost: e.target.value as CreatureAbility['cost'],
                     execution: 'assisted',
                     multiattack: undefined,
-                    recharge: e.target.value === 'passive' ? undefined : draft.recharge,
                     maxUses:
-                      e.target.value === 'passive' ? null : draft.maxUses,
+                      ['passive','legendary'].includes(e.target.value) ? null : draft.maxUses,
+                    legendaryCost: e.target.value==='legendary' ? draft.legendaryCost??1 : undefined,
+                    recharge: ['passive','legendary'].includes(e.target.value) ? undefined : draft.recharge,
                   })
                 }
               >
@@ -200,6 +205,7 @@ export function CreatureAbilitiesEditor({
                     ...draft,
                     execution: e.target.value as CreatureAbility['execution'],
                     ...(e.target.value==='area-save-damage'?{area:draft.area??structuredClone(defaultCreatureArea)}:{}),
+                    legendaryAttackId:e.target.value==='legendary-attack'?(draft.legendaryAttackId??attacks[0]?.id):undefined,
                     ...(e.target.value==='multiattack'?{multiattack:draft.multiattack??(attacks[0]?[{attackId:attacks[0].id,count:2}]:[])}:{multiattack:undefined}),
                   })
                 }
@@ -210,7 +216,8 @@ export function CreatureAbilitiesEditor({
                     : 'Assistida pelo Mestre'}
                 </option>
                 {draft.cost === 'passive' ? <option value="war-caster">Conjurador de Guerra (PHB 2014)</option> : null}
-                {draft.cost !== 'passive' ? <>
+                {draft.cost==='legendary'?<option value="legendary-attack">Ataque cadastrado</option>:null}
+                {draft.cost !== 'passive' && draft.cost !== 'legendary' ? <>
                 <option value="disengage">Desengajar</option>
                 <option value="dash">Disparada</option>
                 <option value="dodge">Esquivar</option>
@@ -219,7 +226,7 @@ export function CreatureAbilitiesEditor({
                 </> : null}
               </select>
             </label>
-            {draft.cost !== 'passive' ? (
+            {draft.cost !== 'passive' && draft.cost !== 'legendary' ? (
               <label>
                 {draft.recharge ? 'Uso disponível antes da recarga' : 'Usos por combate (vazio = livre)'}
                 <input
@@ -239,7 +246,7 @@ export function CreatureAbilitiesEditor({
                 />
               </label>
             ) : null}
-          {draft.cost !== 'passive' ? (
+          {draft.cost !== 'passive' && draft.cost !== 'legendary' ? (
             <label>
               Recuperação da habilidade
               <select aria-label="Recarga da habilidade" value={draft.recharge?.minimum ?? ''}
@@ -252,6 +259,13 @@ export function CreatureAbilitiesEditor({
             </label>
           ) : null}
           </div>
+          {draft.cost==='legendary'?<div className="creature-form-grid">
+            <label>Custo lendário<input aria-label="Custo da Ação Lendária" type="number" min={1} max={20} value={draft.legendaryCost??1} onChange={event=>setDraft({...draft,legendaryCost:Number(event.target.value)})}/></label>
+            {draft.execution==='legendary-attack'?<label>Ataque<select aria-label="Ataque da Ação Lendária" value={draft.legendaryAttackId??''} onChange={event=>setDraft({...draft,legendaryAttackId:event.target.value})}>
+              <option value="">Escolha um ataque</option>{attacks.map(attack=><option key={attack.id} value={attack.id}>{attack.name}</option>)}
+            </select></label>:null}
+            <p className="section-note">Disponível ao fim do turno de outra criatura, na janela do Mestre. Não consome Ação, Bônus ou Reação.</p>
+          </div>:null}
           {draft.execution==='multiattack'?<div className="creature-attacks">
             <h4>Composição dos Ataques Múltiplos</h4>
             <p>Escolha os ataques e quantidades. No combate, cada golpe pode mirar um alvo diferente, em qualquer ordem.</p>

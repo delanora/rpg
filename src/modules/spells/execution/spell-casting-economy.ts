@@ -1,3 +1,4 @@
+import { assertLegendaryTurnOpen } from '../../shared/legendary-actions.js';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
@@ -104,6 +105,7 @@ export async function castingTurnContext(
     include: { combatants: true },
   });
   if (!combat || combat.status !== 'ACTIVE') return null;
+  assertLegendaryTurnOpen(combat.legendaryWindow);
 
   // O contexto só precisa da ORDEM (iniciativa/desempate), que já é a regra
   // canônica; as relações de ficha não são carregadas aqui de propósito.

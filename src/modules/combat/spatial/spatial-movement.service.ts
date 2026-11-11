@@ -1,3 +1,4 @@
+import { assertLegendaryTurnOpen } from '../../shared/legendary-actions.js';
 import { elevationAfterMovement, elevationDecisionRequired, surfaceElevation } from './elevation.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -422,6 +423,7 @@ export async function previewVoluntaryMovement(
 ): Promise<MovementPreviewResult> {
   const combat = await loadCombatById(combatId).catch(() => null);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
+  assertLegendaryTurnOpen(combat.legendaryWindow);
   const combatant = combat.combatants.find((item) => item.id === combatantId);
   if (!combatant) throw new HttpError('Combatente não encontrado neste combate.', 404);
   requireMoveAuthority(actor, combatant);
@@ -572,6 +574,7 @@ export async function commitVoluntaryMovement(
         }
 
         const combat = await loadCombatById(input.combatId, db);
+        assertLegendaryTurnOpen(combat.legendaryWindow);
         const combatant = combat.combatants.find((item) => item.id === input.combatantId);
         if (!combatant) {
           throw new HttpError('Combatente não encontrado neste combate.', 404);

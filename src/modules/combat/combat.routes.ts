@@ -1,3 +1,5 @@
+import { legendaryUseSchema, legendaryPassSchema, legendarySurpriseSchema } from './combat.schema.js';
+import { useLegendaryAction, passLegendaryAction, setLegendarySurprise } from './legendary.service.js';
 import { areaVisualSchema, shareAreaVisual } from './spatial/area-visual.service.js';
 import { previewCreatureArea } from './creature-area.service.js';
 import { gridAreaQuerySchema } from './spatial/area-membership.js';
@@ -66,6 +68,19 @@ import {
 } from './combat.service.js';
 
 export const combatRouter = Router();
+
+combatRouter.post('/legendary/use',authenticate,requireRole('MASTER'),async(req,res)=>{
+ const parsed=legendaryUseSchema.safeParse(req.body);if(!parsed.success){res.status(400).json({error:'VALIDATION_ERROR',issues:parsed.error.flatten()});return;}
+ res.json(await useLegendaryAction(actorFrom(req),parsed.data));
+});
+combatRouter.post('/legendary/pass',authenticate,requireRole('MASTER'),async(req,res)=>{
+ const parsed=legendaryPassSchema.safeParse(req.body);if(!parsed.success){res.status(400).json({error:'VALIDATION_ERROR',issues:parsed.error.flatten()});return;}
+ res.json(await passLegendaryAction(actorFrom(req),parsed.data));
+});
+combatRouter.post('/legendary/surprise',authenticate,requireRole('MASTER'),async(req,res)=>{
+ const parsed=legendarySurpriseSchema.safeParse(req.body);if(!parsed.success){res.status(400).json({error:'VALIDATION_ERROR',issues:parsed.error.flatten()});return;}
+ res.json(await setLegendarySurprise(actorFrom(req),parsed.data));
+});
 
 const pingLimiter = rateLimit({ windowMs: 5000, limit: 12,
   keyGenerator: (req) => req.user!.sub,

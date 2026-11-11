@@ -52,7 +52,7 @@ export function rollInitiativeFor(combatantId: string): Promise<CombatDto> {
  */
 export function nextTurn(
   combat: CombatDto,
-  options: { skipDeathSave?: boolean; extraCombatantId?: string } = {},
+  options: { skipDeathSave?: boolean; skipLegendary?: boolean; extraCombatantId?: string } = {},
 ): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/next-turn', {
     method: 'POST',
@@ -208,4 +208,14 @@ export function requestCombatDuel(combat: CombatDto, requesterId: string, challe
 }
 export function decideCombatDuel(combat: CombatDto, duelId: string, decision: 'accept' | 'decline' | 'cancel' | 'end'): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/duels/decision', { method: 'POST', body: { ...operationFor(combat), duelId, decision } }).then(result => result.combat);
+}
+
+export function useLegendaryAction(combat:CombatDto,input:{windowId:string;combatantId:string;abilityId:string;targetCombatantId?:string;confirmed?:boolean}):Promise<CombatDto> {
+ return api<{combat:CombatDto}>('/api/combat/legendary/use',{method:'POST',body:{...operationFor(combat),...input}}).then(result=>result.combat);
+}
+export function passLegendaryAction(combat:CombatDto,windowId:string,combatantId:string):Promise<CombatDto> {
+ return api<{combat:CombatDto}>('/api/combat/legendary/pass',{method:'POST',body:{...operationFor(combat),windowId,combatantId}}).then(result=>result.combat);
+}
+export function setLegendarySurprise(combat:CombatDto,combatantId:string,surprised:boolean):Promise<CombatDto> {
+ return api<{combat:CombatDto}>('/api/combat/legendary/surprise',{method:'POST',body:{...operationFor(combat),combatantId,surprised}}).then(result=>result.combat);
 }

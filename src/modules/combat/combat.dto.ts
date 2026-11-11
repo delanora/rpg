@@ -1,3 +1,4 @@
+import { legendaryStateOf, legendaryWindowOf, type LegendaryPoolDto, type LegendaryWindowDto } from '../shared/legendary-actions.js';
 import { surfaceElevation } from './spatial/elevation.js';
 import { planNextTurn } from './turn-order.js';
 import type { CombatDuelDto } from '../shared/duels.js';
@@ -61,6 +62,8 @@ export interface CombatantSpatialDto {
 
 /** Formato do combate enviado a jogadores e mestre. */
 export interface CombatDto {
+  legendaryPause?: boolean;
+  legendaryWindow?: LegendaryWindowDto | null;
   duels?: CombatDuelDto[];
   hostilityPrompts?: HostilityPromptDto[];
   version: number;
@@ -128,6 +131,7 @@ export interface CombatantDto {
   tokenDimmed?: boolean;
   tokenNumber?: number | null;
   turnEconomy: TurnEconomy;
+  legendary?: LegendaryPoolDto | null;
   abilities?: CreatureAbility[];
   abilityUses?: Record<string, number>;
   mechanicalState: ReturnType<typeof mechanicalStateOf>;
@@ -201,6 +205,7 @@ export interface CombatantDto {
  * Evita depender dos genéricos do Prisma em toda a aplicação.
  */
 export interface CombatSourced {
+  legendaryWindow?: unknown;
   turnSequence?: number;
   extraTurnResumeAfterId?: string | null;
   duels?: { id: string; requesterId: string; challengedId: string; status: string }[];
@@ -232,6 +237,7 @@ export interface CombatSourced {
 }
 
 export interface CombatantSourced {
+  legendaryState?: unknown;
   firstTurnPending?: boolean;
   /** Derivado dos duelos ativos; nunca gravado em hostileToIds. */
   duelOpponentIds?: string[];
@@ -402,6 +408,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
     hostileToIds: [...new Set([...(combatant.hostileToIds ?? []), ...(combatant.duelOpponentIds ?? [])])],
+    legendary: combatant.creature ? {...legendaryStateOf(combatant.legendaryState),max:combatant.creature.legendaryActionsMax} : null,
     abilities: creatureAbilitiesOf(combatant.creature?.abilities),
     abilityUses: creatureAbilityUsesOf(combatant.abilityUses),
     tokenDimmed: deathState.dead || hpCurrent <= 0 || deriveConditionEffects(combatantMechanicalState(combatant)).active.includes('unconscious'),
@@ -490,6 +497,8 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     currentIndex: combat.currentIndex,
     currentCombatantId: current?.id ?? null,
     nextCombatantId: nextPlan ? ordered[nextPlan.index].id : null,
+    legendaryPause: Boolean(legendaryWindowOf(combat.legendaryWindow)),
+    legendaryWindow: viewer === 'MASTER' ? legendaryWindowOf(combat.legendaryWindow) : null,
     localityId: combat.locality?.id ?? null,
     localityName: combat.locality?.name ?? null,
     sceneId: combat.scene?.id ?? null,
@@ -542,6 +551,7 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
     hostilityPrompts: [],
     nextCombatantId: dto.nextCombatantId && !hiddenIds.has(dto.nextCombatantId) ? dto.nextCombatantId : null,
     currentCombatantId: dto.currentCombatantId && !hiddenIds.has(dto.currentCombatantId) ? dto.currentCombatantId : null,
+    legendaryWindow: null,
     economyLog: dto.economyLog.filter((entry) => entry.private !== true && !hidden.some(c=>entry.actorName===c.name || entry.message.includes(c.name))),
     combatants: dto.combatants.filter(c=>!hiddenIds.has(c.id)).map((combatant) => {
       // DUAS políticas INDEPENDENTES (6.6L.3.2): estado mecânico (por tipo: NPC
@@ -606,6 +616,7 @@ export function hideCombatantMechanicalState(combatant: CombatantDto): Combatant
 
   return {
     ...combatant,
+    legendary: null,
     abilities: [],
     abilityUses: {},
     hpCurrent: null,

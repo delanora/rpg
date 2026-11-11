@@ -174,7 +174,7 @@ export async function resolutionRequestsForCombat(
   }
 
   const ordered = orderCombatants(combat.combatants as never);
-  const current = combat.status === 'ACTIVE' ? ordered[combat.currentIndex] : null;
+  const current = combat.status === 'ACTIVE' && !combat.legendaryWindow ? ordered[combat.currentIndex] : null;
   const currentKey = current ? turnKey(combat.id, combat.round, combat.currentIndex) : null;
 
   // Alvos canônicos: personagem resolve para a FICHA; criatura/NPC para a

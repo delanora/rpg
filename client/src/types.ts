@@ -1791,6 +1791,7 @@ export interface Creature {
   /** URL pública do ícone/retrato ('' = sem imagem). */
   imageUrl: string;
   tokenImages: string[];
+  legendaryActionsMax?: number;
   abilities?: CreatureAbility[];
 
   version: number;
@@ -1833,6 +1834,7 @@ export interface CreaturePatch {
   description?: string;
   imageUrl?: string;
   tokenImages?: string[];
+  legendaryActionsMax?: number;
   abilities?: CreatureAbility[];
   spellRepertoire?: Creature['spellRepertoire'];
 }
@@ -2411,6 +2413,7 @@ export interface SceneDeletedPayload {
 }
 
 export interface CombatantDto {
+  legendary?: import('../../src/modules/shared/legendary-actions').LegendaryPoolDto | null;
   hostileToIds?: string[];
   tokenDimmed?: boolean;
   tokenNumber?: number | null;
@@ -2466,6 +2469,8 @@ export interface CombatantDto {
 }
 
 export interface CombatDto {
+  legendaryPause?: boolean;
+  legendaryWindow?: import('../../src/modules/shared/legendary-actions').LegendaryWindowDto | null;
   duels?: CombatDuelDto[];
   hostilityPrompts?: HostilityPromptDto[];
   version: number;
