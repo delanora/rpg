@@ -424,3 +424,45 @@
   }
   .death-save-flight .ddie-orient { transition: none; }
 }
+
+/* Título ilustrado centralizado na bandeja, sem o fechar deslocar a arte. */
+.dice-stage.is-death-save .dice-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.dice-stage.is-death-save .dice-watch-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.dice-stage.is-death-save :is(.dice-head, .dice-watch-head) .death-save-title {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding-inline: 2rem;
+  box-sizing: border-box;
+}
+.dice-stage.is-death-save .death-save-title img {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  height: auto;
+  /* Preserva o arquivo original; aproxima a leitura do latão iluminado do aro. */
+  filter: brightness(1.45) saturate(.8) drop-shadow(0 1px 2px #000) drop-shadow(0 0 5px rgba(201, 164, 104, .16));
+  user-select: none;
+}
+.dice-stage.is-death-save :is(.dice-head, .dice-watch-head) .dice-head-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+/* O trilho da janela respeita a largura útil do overlay no celular. */
+.dice-overlay.is-death-save {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dice-overlay.is-death-save .dice-stage.is-death-save {
+  width: min(34rem, 100%);
+  min-width: 0;
+}

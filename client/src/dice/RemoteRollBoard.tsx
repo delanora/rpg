@@ -1,3 +1,4 @@
+import { DeathSaveTitle } from './DeathSaveTitle';
 import { DeathSaveRoll } from './DeathSaveRoll';
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -61,6 +62,7 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
       >
         {/* Cabeçalho: quem está rolando (só leitura para quem assiste). */}
         <header className="dice-watch-head">
+          {deathSave ? <DeathSaveTitle /> : null}
           <Portrait
             src={board.avatarUrl}
             alt={board.actorName}

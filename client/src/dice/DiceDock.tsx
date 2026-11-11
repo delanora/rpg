@@ -1,3 +1,4 @@
+import { DeathSaveTitle } from './DeathSaveTitle';
 import { DeathSaveRoll } from './DeathSaveRoll';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -171,14 +172,10 @@ export function DiceDock({ roller }: DiceDockProps) {
                 onKeyDown={cancelAutoClose}
               >
                 <header className="dice-head">
-                  <h2>
-                    <Icon name={deathSave ? 'skull' : 'die'} size={18} />
-                    {context
-                      ? deathSave
-                        ? context.label
-                        : `Teste de ${context.label}`
-                      : 'Rolagem livre'}
-                  </h2>
+                  {deathSave ? <DeathSaveTitle /> : <h2>
+                    <Icon name="die" size={18} />
+                    {context ? `Teste de ${context.label}` : 'Rolagem livre'}
+                  </h2>}
                   {/* No Teste contra a Morte não existe bônus: só o dado decide. */}
                   {context && !deathSave ? (
                     <span className="dice-head-bonus">
