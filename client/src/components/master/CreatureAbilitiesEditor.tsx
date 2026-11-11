@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CreatureAbility } from '../../types';
 import {
   creatureAbilitySchema,
+  creatureRechargeLabel,
   CREATURE_ABILITY_COST_LABELS as ABILITY_COST_LABELS,
 } from '../../../../src/modules/shared/creature-abilities';
 import { createOperationId } from '../../utils';
@@ -130,7 +131,7 @@ export function CreatureAbilitiesEditor({
                   : 'Assistida'
                 : 'Automática'}{' '}
               ·{' '}
-              {item.maxUses === null
+              {item.recharge ? creatureRechargeLabel(item.recharge.minimum) : item.maxUses === null
                 ? 'Sem limite de usos'
                 : `${item.maxUses} usos por combate`}
             </p>
@@ -168,6 +169,7 @@ export function CreatureAbilitiesEditor({
                     ...draft,
                     cost: e.target.value as CreatureAbility['cost'],
                     execution: 'assisted',
+                    recharge: e.target.value === 'passive' ? undefined : draft.recharge,
                     maxUses:
                       e.target.value === 'passive' ? null : draft.maxUses,
                   })
@@ -210,8 +212,9 @@ export function CreatureAbilitiesEditor({
             </label>
             {draft.cost !== 'passive' ? (
               <label>
-                Usos por combate (vazio = livre)
+                {draft.recharge ? 'Uso disponível antes da recarga' : 'Usos por combate (vazio = livre)'}
                 <input
+                  disabled={!!draft.recharge}
                   aria-label="Usos da habilidade"
                   type="number"
                   min={1}
@@ -227,6 +230,18 @@ export function CreatureAbilitiesEditor({
                 />
               </label>
             ) : null}
+          {draft.cost !== 'passive' ? (
+            <label>
+              Recuperação da habilidade
+              <select aria-label="Recarga da habilidade" value={draft.recharge?.minimum ?? ''}
+                onChange={e => setDraft({ ...draft, recharge: e.target.value ? { minimum: Number(e.target.value) } : undefined,
+                  ...(e.target.value ? { maxUses: 1 } : {}) })}>
+                <option value="">Sem recarga automática</option>
+                {[1, 2, 3, 4, 5, 6].map(minimum => <option key={minimum} value={minimum}>{creatureRechargeLabel(minimum)} em 1d6</option>)}
+              </select>
+              <small>Quando gasta, tenta recuperar no início do próprio turno. O Mestre pode restaurar manualmente após um descanso.</small>
+            </label>
+          ) : null}
           </div>
           {draft.execution==='area-save-damage'?<CreatureAreaFields value={draft.area??defaultCreatureArea} onChange={area=>setDraft({...draft,area})}/>:null}
           {draft.cost === 'reaction' ? (
@@ -256,8 +271,8 @@ export function CreatureAbilitiesEditor({
           <p className="section-note">
             Assistida: controla custo e usos; o Mestre resolve o efeito.
             Esconder-se exige avaliação e testes, sem ocultar automaticamente o
-            token. Passivas são consultivas. Recarga e descanso ainda não são
-            automáticos.
+            token. Passivas são consultivas. Recarga em 1d6 é automática no
+            início do turno; descanso permanece assistido.
           </p>
           {error ? (
             <p role="alert" className="form-error">

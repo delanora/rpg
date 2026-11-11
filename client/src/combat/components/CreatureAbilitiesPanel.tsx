@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CombatDto, CombatantDto } from '../../types';
 import { useCreatureAbility } from '../combatApi';
-import { CREATURE_ABILITY_COST_LABELS as ABILITY_COST_LABELS } from '../../../../src/modules/shared/creature-abilities';
+import { creatureRechargeLabel, CREATURE_ABILITY_COST_LABELS as ABILITY_COST_LABELS } from '../../../../src/modules/shared/creature-abilities';
 import './creature-abilities.css';
 
 /** Superfície do Mestre: sem segunda economia e sem detectar gatilhos por texto. */
@@ -54,6 +54,7 @@ export function CreatureAbilitiesPanel({
                   : `${Math.max(0, ability.maxUses - used)}/${ability.maxUses} usos`}
               </span>
             </header>
+            {ability.recharge ? <p>{creatureRechargeLabel(ability.recharge.minimum)} · {used > 0 ? 'Aguardando recarga no início do turno' : 'Disponível'}</p> : null}
             <p>{ability.description}</p>
             {ability.trigger ? <p>Gatilho: {ability.trigger}</p> : null}
             <small>

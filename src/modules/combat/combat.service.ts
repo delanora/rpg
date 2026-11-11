@@ -1,7 +1,7 @@
 import { beginCreatureAreaUse, publishCreatureAreaUse } from './creature-area.service.js';
 import { obstacleCoverProvider } from './spatial/obstacle-cover.js';
 import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
-import { creatureAbilitiesOf, creatureAbilityUsesOf } from '../shared/creature-abilities.js';
+import { creatureAbilitiesOf, creatureAbilityUsesOf, rechargeCreatureAbilities, creatureRechargeLabel } from '../shared/creature-abilities.js';
 import { creatureAbilityUseSchema, hostilityDecisionSchema, duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
 import type { z } from 'zod';
 import { validateParticipantPositions } from './participants-position.js';
@@ -446,6 +446,23 @@ export async function appendEconomyLog(
   };
   combat.economyLog = [...log, entry].slice(-100);
   await db.combat.update({ where: { id: combat.id }, data: { economyLog: combat.economyLog as Prisma.InputJsonValue } });
+}
+
+/** Só chamado na ativação real de turno, dentro da mesma transação e versão. */
+async function rechargeAtTurnStart(
+  db: Prisma.TransactionClient,
+  combat: CombatSourced,
+  unit: CombatantSourced,
+) {
+  if (!unit.creature || unit.character || combatantDeathState(unit).dead) return;
+  const { uses, results } = rechargeCreatureAbilities(unit.creature.abilities, unit.abilityUses, () => rollDie(6));
+  if (!results.length) return;
+  await db.combatant.update({ where: { id: unit.id }, data: { abilityUses: uses } });
+  for (const result of results) {
+    await appendEconomyLog(db, combat, unit,
+      `${result.name} — ${creatureRechargeLabel(result.minimum)}: 1d6 = ${result.roll}. ${result.restored ? 'Habilidade disponível novamente.' : 'Ainda não recarregou.'}`,
+      'creature-recharge', { private: true });
+  }
 }
 
 /**
@@ -1000,6 +1017,7 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
     });
     if (!changed.count) return;
     const first = ordered[startIndex];
+    if (first) await rechargeAtTurnStart(db, combat, first);
     if (first) await db.combatant.update({
       where: { id: first.id }, data: { turnEconomy: onTurnStart(combatantSpeed(first)), sneakAttackUsedThisTurn: false },
     });
@@ -1240,6 +1258,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     } });
     // O Teste contra a Morte é liberado no INÍCIO do próprio turno (1 por turno).
     await onTurnStartDeath(deathEntityOf(incoming), db);
+    await rechargeAtTurnStart(db, combat, incoming);
     // O motivo do pulo é informativo e PRIVADO quando envolve criatura/NPC.
     if (skipped.length > 0) {
       const names = skipped.map((item) => item.name).join(', ');
@@ -2836,6 +2855,7 @@ export async function removeCombatParticipant(
             .filter((c) => c.id !== unit.id && c.initiative !== null && autoSkippedAtZero(c)))
             await onTurnStartDeath(deathEntityOf(skipped), db);
           await onTurnStartDeath(deathEntityOf(incoming), db);
+          await rechargeAtTurnStart(db, combat, incoming);
           affected.push(
             ...(await processDurationExpirations(db, combat.id)).targets,
           );

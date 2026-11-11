@@ -34,10 +34,13 @@ export const creatureAbilitySchema = z
       .default('assisted'),
     area: creatureAreaDefinitionSchema.optional(),
     trigger: z.string().trim().max(500).default(''),
+    recharge: z.object({ minimum: z.number().int().min(1).max(6) }).strict().optional(),
     maxUses: z.number().int().min(1).max(100).nullable().default(null),
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.recharge && (value.cost === 'passive' || value.maxUses !== 1))
+      ctx.addIssue({ code: 'custom', message: 'Recarga em 1d6 exige uma habilidade ativa com um único uso.' });
     if(value.execution==='area-save-damage'&&(!value.area||!['action','bonus-action'].includes(value.cost)))ctx.addIssue({code:'custom',message:'Área com dano exige uma Ação/Ação bônus e forma, CD e dano cadastrados.'});
     if (
       value.cost === 'passive' &&
@@ -83,3 +86,25 @@ export const CREATURE_ABILITY_COST_LABELS = {
   reaction: 'Reação',
   passive: 'Passiva',
 } as const;
+
+/** Uma tentativa por habilidade gasta; a transação do turno controla a ocorrência. */
+export function rechargeCreatureAbilities(
+  definitions: unknown,
+  state: unknown,
+  rollD6: () => number,
+) {
+  const uses = { ...creatureAbilityUsesOf(state) };
+  const results: { abilityId: string; name: string; minimum: number; roll: number; restored: boolean }[] = [];
+  for (const ability of creatureAbilitiesOf(definitions)) {
+    if (!ability.recharge || (uses[ability.id] ?? 0) === 0) continue;
+    const roll = rollD6();
+    const restored = roll >= ability.recharge.minimum;
+    if (restored) uses[ability.id] = 0;
+    results.push({ abilityId: ability.id, name: ability.name, minimum: ability.recharge.minimum, roll, restored });
+  }
+  return { uses, results };
+}
+
+export function creatureRechargeLabel(minimum: number): string {
+  return minimum === 6 ? 'Recarga 6' : `Recarga ${minimum}–6`;
+}
