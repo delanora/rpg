@@ -200,6 +200,7 @@ export const ServerEvents = {
    * (master-only) não recebe nada — o filtro é do servidor.
    */
   COMBAT_PING: 'combat:ping',
+  COMBAT_AREA_VISUAL: 'combat:area-visual',
   COMBAT_MOVEMENT_VISUAL: 'combat:movement-visual',
   MECHANICAL_UPDATED: 'mechanical:updated',
   /**
@@ -669,3 +670,5 @@ export interface CombatPingPayload {
   color: string;
   durationMs: 3000;
 }
+
+export type { CombatAreaVisualPayload } from '../modules/shared/area-visual.js';

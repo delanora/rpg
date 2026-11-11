@@ -1,3 +1,5 @@
+import { GridAreaShape } from './GridAreaShape';
+import { useShareAreaVisual } from './areaVisual';
 import { ApiError } from '../../api';
 import { createOperationId } from '../../utils';
 import { useCreatureAbility } from '../combatApi';
@@ -13,7 +15,6 @@ import {
   PREVIEW_SHAPES,
   previewDirectional,
   previewAngle,
-  previewPolygon,
   type PreviewShape,
   type AreaPreviewRequest,
 } from './areaPreviewGeometry';
@@ -21,7 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 import type { SpatialPosition } from '../../types';
 import { formatSceneMeters } from '../../sceneUnits';
-import { feetToScenePixel, sceneToScreen, type GridCamera } from './gridCamera';
+import { type GridCamera } from './gridCamera';
 
 const RADII_FEET = [5, 10, 15, 20, 30, 40, 60] as const;
 type AbilityContext = NonNullable<AreaPreviewRequest['ability']>;
@@ -53,7 +54,7 @@ interface Props {
   pinging: boolean;
 }
 
-/** O desenho é local; a consulta privada de atingidos vem do servidor.
+/** O desenho pode ser compartilhado; a consulta privada de atingidos vem do servidor.
  * Não executa ataques, dano ou consumo de recursos. */
 export function GridAreaPreview({
   onCombatChange,
@@ -204,9 +205,9 @@ export function GridAreaPreview({
           }
         : null
       : saved;
-  const projected = marker
-    ? sceneToScreen(camera, feetToScenePixel(marker.center, geometry))
-    : null;
+  const sharingError=useShareAreaVisual(assessmentContext?.combatId,
+    `${assessmentContext?.casterCombatantId}:${request?.id}`,
+    marker?.ability && !disabled && assessmentContext?.casterCombatantId===marker.ability.combatantId ? {combatantId:marker.ability.combatantId,abilityId:marker.ability.definition.id,origin:marker.center,angle:marker.angle}:null);
 
   const decisionKey = `${assessmentContext?.combatId}:${assessmentContext?.version}:${JSON.stringify(saved)}`;
   const decisions =
@@ -360,40 +361,8 @@ export function GridAreaPreview({
 
   return (
     <>
-      {projected && marker ? (
-        <svg className="grid-area-shape" aria-hidden="true">
-          <g
-            transform={`translate(${projected.x} ${projected.y}) rotate(${(marker.angle * 180) / Math.PI}) scale(${(geometry.pixelsPerCell / geometry.cellSizeFeet) * camera.zoom})`}
-          >
-            {previewPolygon(
-              marker.shape,
-              marker.radiusFeet,
-              marker.widthFeet,
-            ) ? (
-              <polygon
-                className={editing ? 'is-draft' : ''}
-                points={previewPolygon(
-                  marker.shape,
-                  marker.radiusFeet,
-                  marker.widthFeet,
-                )!}
-                vectorEffect="non-scaling-stroke"
-              />
-            ) : (
-              <circle
-                className={editing ? 'is-draft' : ''}
-                cx={0}
-                cy={0}
-                r={marker.radiusFeet}
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
-          </g>
-          <path
-            d={`M${projected.x - 5},${projected.y}h10 M${projected.x},${projected.y - 5}v10`}
-          />
-        </svg>
-      ) : null}
+      {marker ? <GridAreaShape marker={marker} camera={camera} geometry={geometry}
+        damageType={marker.ability?.definition.area?.damage[0]?.type} draft={editing}/> : null}
       {editing && !disabled && !pinging ? (
         <div
           className={`grid-area-capture${panning ? ' is-pan' : ''}`}
@@ -473,6 +442,7 @@ export function GridAreaPreview({
         onDoubleClick={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.stopPropagation()}
       >
+        {sharingError ? <p className="section-note" role="status">{sharingError}</p> : null}
         {!editing || disabled ? (
           <>
             <button

@@ -1,3 +1,4 @@
+import { GridSharedAreas } from './GridSharedAreas';
 import type { AreaReading } from './areaQueryApi';
 import { GridElevations } from './GridElevations';
 import { requestElevation } from './elevationApi';
@@ -2303,6 +2304,7 @@ export function CombatGrid({
             </div>
           </div>
 
+          {!isMaster ? <GridSharedAreas key={`shared:${areaSceneKey}`} combat={combat} camera={camera} geometry={geometry}/> : null}
           <GridAreaPreview
             assessmentContext={isMaster ? {combatId:combat.id,version:combat.version,casterCombatantId:combat.currentCombatantId??undefined} : null}
             onTargets={setAreaReadings}

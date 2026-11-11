@@ -1,3 +1,4 @@
+import { areaVisualSchema, shareAreaVisual } from './spatial/area-visual.service.js';
 import { previewCreatureArea } from './creature-area.service.js';
 import { gridAreaQuerySchema } from './spatial/area-membership.js';
 import { queryCombatArea } from './spatial/area-query.service.js';
@@ -74,6 +75,15 @@ combatRouter.post('/:combatId/spatial/ping', authenticate, pingLimiter, async (r
   const parsed = combatPingSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() }); return; }
   res.json(await sendCombatPing(String(req.params.combatId), parsed.data.position, req.user!));
+});
+
+const areaVisualLimiter = rateLimit({ windowMs: 5000, limit: 40,
+  keyGenerator: req => req.user!.sub,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Aguarde um instante para atualizar a área.' } });
+combatRouter.post('/:combatId/spatial/area-visual', authenticate, requireRole('MASTER'), areaVisualLimiter, async (req, res) => {
+  const parsed=areaVisualSchema.safeParse(req.body);
+  if(!parsed.success) { res.status(400).json({error:'VALIDATION_ERROR',issues:parsed.error.flatten()}); return; }
+  res.json(await shareAreaVisual(String(req.params.combatId),parsed.data,req.user!));
 });
 
 /** O autor vem sempre do token, nunca do corpo da requisição. */

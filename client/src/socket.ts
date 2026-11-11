@@ -1,3 +1,4 @@
+import type { CombatAreaVisualPayload } from '../../src/modules/shared/area-visual';
 import type { CombatPingPayload } from './types';
 import { io, type Socket } from 'socket.io-client';
 import { getToken } from './api';
@@ -74,6 +75,7 @@ export interface ServerToClientEvents {
   'game:config': (payload: GameConfigPayload) => void;
   'music:state': (payload: MusicStatePayload) => void;
   'music:tracks': (payload: MusicTracksPayload) => void;
+  'combat:area-visual': (payload: CombatAreaVisualPayload) => void;
   'combat:ping': (payload: CombatPingPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'mechanical:updated': (payload: MechanicalUpdatedPayload) => void;

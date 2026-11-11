@@ -1459,8 +1459,8 @@ button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }
 .grid-token.has-number .grid-token-label { bottom: -1.35rem; }
 
 /* Modelo circular local: mesma câmera do mapa; sem validação de atingidos. */
-.grid-area-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden; color: var(--gold-bright); }
-.grid-area-shape circle, .grid-area-shape polygon { fill: color-mix(in srgb, var(--gold-bright) 14%, transparent); stroke: currentColor; stroke-width: 2; }
+.grid-area-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden; color: var(--area-accent, var(--gold-bright)); }
+.grid-area-shape circle, .grid-area-shape polygon { fill: color-mix(in srgb, currentColor 20%, transparent); stroke: currentColor; stroke-width: 2; }
 .grid-area-shape .is-draft { stroke-dasharray: 6 4; }
 .grid-area-shape path { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .grid-area-capture { position: absolute; inset: 0; z-index: 4; cursor: crosshair; touch-action: none; }

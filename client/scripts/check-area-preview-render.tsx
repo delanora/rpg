@@ -57,7 +57,7 @@ try{
   if(shape==='cone')check('Cone preserva comprimento e largura da base iguais',host.querySelector('polygon')?.getAttribute('points')==='0,0 20,-10 20,10');
   if(shape==='cube')check('Cubo preserva aresta e origem na face',host.querySelector('polygon')?.getAttribute('points')==='0,-10 20,-10 20,10 0,10');
   if(shape==='line'){await choose('Largura da linha','10');check('Linha mantém largura separada do comprimento',host.querySelector('polygon')?.getAttribute('points')==='0,-5 20,-5 20,5 0,5')}
-  if(shape==='cylinder'){await choose('Altura do cilindro','40');check('Cilindro informa altura sem alterar raio',host.querySelector('circle')?.getAttribute('r')==='20'&&host.textContent?.includes('Altura 12 m'))}
+  if(shape==='cylinder')check('Cilindro preserva raio e usa elevação do grid, sem campo manual de altura',host.querySelector('circle')?.getAttribute('r')==='20'&&!host.querySelector('[aria-label="Altura do cilindro"]'));
   await click('Confirmar');await render();check(`${shape}: pedido original não reabre edição`,!host.querySelector('.grid-area-capture'));
   await click('Área ·');await click('Cancelar');check(`${shape}: cancelar reedição conserva prévia`,!!host.querySelector('circle,polygon'));
   await remove();

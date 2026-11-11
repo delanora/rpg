@@ -1013,6 +1013,10 @@ No combate com grid, **segure Alt e clique no mapa** para sinalizar um ponto. O 
 
 Como Mestre, abra o radial no grid vazio e escolha uma área. Defina forma, dimensão, origem e direção e confirme. A consulta privada destaca os atingidos, sem gastar ações ou aplicar dano. Usa sobreposição parcial do espaço ocupado e a elevação do executor atual: outro nível fica fora por padrão e pode ser incluído somente por exceção do Mestre naquela consulta. Não exige altura corporal nem campos de altura da origem/destino. Paredes configuradas para bloquear ataques impedem a propagação; não são contornadas pela exceção de elevação.
 
+A prévia das habilidades em área usa a paleta do tipo de dano: elétrico azul, veneno verde, fogo vermelho/laranja e as demais famílias do tema. Com vários componentes, usa o primeiro tipo cadastrado. Enquanto o Mestre mira uma habilidade de criatura revelada no turno dela, os jogadores veem a mesma forma e direção, com pan/zoom próprios. Cancelar, remover ou usar a habilidade retira a prévia; sem atualizações, ela expira em seis segundos. A consulta livre pelo radial continua local. Criaturas ocultas não revelam a área aos jogadores, que também não recebem CD, dados de dano ou candidatos privados.
+
+O compartilhamento é efêmero por `POST /api/combat/:combatId/spatial/area-visual` (Mestre) e evento `combat:area-visual`. Forma e tipo vêm do servidor; o cliente envia só a habilidade, origem/direção e sequência da sessão. Não altera versão, recursos ou atingidos.
+
 Para executar uma habilidade real, cadastre **Área com salvaguarda e dano** no bestiário e use **Preparar área** em Habilidades. As dimensões vêm do cadastro. Depois de conferir os atingidos, **Usar** consome Ação/Ação Bônus e usos, cria as salvaguardas no Registro e resolve o dano pelo pipeline compartilhado. A confirmação de elevação vale só para aquela execução. A convenção de elevação foi escolhida pela mesa; não pretende simular volumes físicos do corpo nem altera teleporte.
 
 ## O fluxo, passo a passo

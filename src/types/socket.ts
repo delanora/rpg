@@ -1,3 +1,4 @@
+import type { CombatAreaVisualPayload } from '../realtime/events.js';
 import type { CombatPingPayload } from '../realtime/events.js';
 import type { MechanicalUpdatedPayload } from '../realtime/events.js';
 import type { Role } from '@prisma/client';
@@ -60,6 +61,7 @@ export interface ServerToClientEvents {
   'music:tracks': (payload: MusicTracksPayload) => void;
 
   // Combate
+  'combat:area-visual': (payload: CombatAreaVisualPayload) => void;
   'combat:ping': (payload: CombatPingPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'mechanical:updated': (payload: MechanicalUpdatedPayload) => void;
