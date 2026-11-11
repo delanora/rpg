@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { texturaDaFace } from './deathFaces';
+import { poseInicialDeOracao, texturaDaFace } from './deathFaces';
 import { dieFaces, paintsValues, settleTransform, type V3 } from './polyhedra';
 
 /** Direção da luz (no espaço do modelo) usada para o facetado das faces. */
@@ -49,10 +49,13 @@ export function Die3D({
 }: Die3DProps) {
   const faces = useMemo(() => dieFaces(sides), [sides]);
   const paints = paintsValues(sides);
-  const settle = value !== null && (reveal || (appearance === 'death-save' && tumbling))
-    ? settleTransform(sides, value)
-    : null;
   const temaMorte = appearance === 'death-save';
+  // A oração é só a pose de espera; não preenche nem antecipa o resultado.
+  const settle = temaMorte && !reveal && !tumbling
+    ? poseInicialDeOracao()
+    : value !== null && (reveal || (temaMorte && tumbling))
+      ? settleTransform(sides, value)
+      : null;
 
   const className = [
     'ddie',
@@ -131,7 +134,7 @@ export function Die3D({
         </span>
       </span>
 
-      {!reveal || !paints ? (
+      {!temaMorte && (!reveal || !paints) ? (
         <span className="ddie-badge">
           {reveal && value !== null && !paints ? value : `d${sides}`}
         </span>

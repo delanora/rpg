@@ -1,4 +1,4 @@
-import type { DieFace } from './polyhedra';
+import { dieFaces, settleTransform, type DieFace } from './polyhedra';
 
 /**
  * Texturas do dado do Teste contra a Morte.
@@ -115,4 +115,22 @@ export function texturaDaFace(face: DieFace): TexturaFace | null {
     largura: LARGURA,
     altura: ALTURA,
   };
+}
+
+/** Face 20 de frente e ponta da oração exatamente para cima na pose de espera. */
+export function poseInicialDeOracao(): string {
+  const face = dieFaces(20).find(item => item.value === 20)!;
+  const orientacao = settleTransform(20, 20);
+  const numeros = (matrix: string) => matrix.slice(matrix.indexOf('(') + 1, -1).split(',').map(Number);
+  const arte = numeros(texturaDaFace(face)!.transform);
+  const plano = numeros(face.transform);
+  const pouso = numeros(orientacao);
+  // Ponta da placa (160, 40), relativa ao centro da face, no espaço do modelo.
+  const x = arte[0] * 160 + arte[2] * 40 + arte[4] - face.center[0];
+  const y = arte[1] * 160 + arte[3] * 40 + arte[5] - face.center[1];
+  const vetor = [plano[0] * x + plano[4] * y, plano[1] * x + plano[5] * y, plano[2] * x + plano[6] * y];
+  const telaX = pouso[0] * vetor[0] + pouso[4] * vetor[1] + pouso[8] * vetor[2];
+  const telaY = pouso[1] * vetor[0] + pouso[5] * vetor[1] + pouso[9] * vetor[2];
+  const correcao = -Math.atan2(telaX, -telaY) * 180 / Math.PI;
+  return `rotateZ(${correcao.toFixed(6)}deg) ${orientacao}`;
 }
