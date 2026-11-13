@@ -15,7 +15,7 @@ export function CreatureAbilitiesPanel({
   combat: CombatDto;
   combatant: CombatantDto;
   busy: boolean;
-  onPrepareArea?: (combatantId:string,ability:NonNullable<CombatantDto['abilities']>[number])=>void;
+  onPrepareArea?: (combatantId:string,ability:NonNullable<CombatantDto['abilities']>[number],multiattackId?:string)=>void;
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -32,8 +32,8 @@ export function CreatureAbilitiesPanel({
       </article>:null}
       {sequence?<article aria-label="Progresso dos Ataques Múltiplos">
         <strong>{sequence.label} · {sequence.performed}/{sequence.total}</strong>
-        <p>{sequencePending?'Resolva os golpes restantes no painel de ataques. Cada golpe escolhe seu alvo.':'Todos os golpes foram resolvidos.'}</p>
-        {sequence.attacks.filter(item=>item.remaining>0).map(item=><p key={item.attackId}>{item.name} · {item.remaining} restante(s)</p>)}
+        <p>{sequencePending?'Resolva os ataques no painel de ataques e as habilidades nas opções abaixo.':'Todos os golpes foram resolvidos.'}</p>
+        {sequence.attacks.filter(item=>item.remaining>0).map(item=><p key={`${item.kind??'attack'}:${item.attackId}`}>{item.name} · {item.remaining} restante(s)</p>)}
         {sequencePending?<button type="button" className="btn btn-small" disabled={busy} onClick={()=>onRun(()=>useCreatureAbility(combat,{combatantId:combatant.id,abilityId:sequence.abilityId,mode:'cancel-multiattack'}))}>Abandonar golpes restantes</button>:null}
       </article>:null}
       {!abilities.length ? (
@@ -44,6 +44,8 @@ export function CreatureAbilitiesPanel({
       {abilities.map((ability) => {
         const used = combatant.abilityUses?.[ability.id] ?? 0;
         const economy = combatant.turnEconomy;
+        const reserved=sequencePending&&sequence?.attacks.some(item=>item.kind==='ability'&&item.attackId===ability.id&&item.remaining>0);
+        const compositionId=reserved?sequence!.id:undefined;
         const unavailable =
           (ability.execution==='multiattack' && sequencePending) ||
           combatant.deathBlocksActions ||
@@ -52,9 +54,9 @@ export function CreatureAbilitiesPanel({
           combat.status !== 'ACTIVE' ||
           (ability.cost !== 'reaction' &&
             combat.currentCombatantId !== combatant.id) ||
-          (ability.cost === 'action' &&
+          (!reserved && ability.cost === 'action' &&
             economy.actionsUsed >= economy.actionsGranted) ||
-          (ability.cost === 'bonus-action' && economy.bonusActionUsed) ||
+          (!reserved && ability.cost === 'bonus-action' && economy.bonusActionUsed) ||
           (ability.cost === 'reaction' && !economy.reactionAvailable) ||
           (ability.maxUses !== null && used >= ability.maxUses);
         return (
@@ -62,7 +64,7 @@ export function CreatureAbilitiesPanel({
             <header>
               <strong>{ability.name}</strong>
               <span>
-                {ABILITY_COST_LABELS[ability.cost]} ·{' '}
+                {reserved?'Incluída nos Ataques Múltiplos':ABILITY_COST_LABELS[ability.cost]} ·{' '}
                 {ability.maxUses === null
                   ? 'Livre'
                   : `${Math.max(0, ability.maxUses - used)}/${ability.maxUses} usos`}
@@ -84,7 +86,7 @@ export function CreatureAbilitiesPanel({
                   className="btn btn-small"
                   type="button"
                   disabled={busy || unavailable}
-                  onClick={() => ability.execution==='area-save-damage' ? onPrepareArea?.(combatant.id,ability) : setSelected(ability.id)}
+                  onClick={() => ability.execution==='area-save-damage' ? onPrepareArea?.(combatant.id,ability,compositionId) : setSelected(ability.id)}
                 >
                   {ability.execution==='area-save-damage'?'Preparar área':'Usar habilidade'}
                 </button>
@@ -122,6 +124,7 @@ export function CreatureAbilitiesPanel({
                       useCreatureAbility(combat, {
                         combatantId: combatant.id,
                         abilityId: ability.id,
+                        ...(!restore&&compositionId?{multiattackId:compositionId}:{}),
                         confirmed: true,
                         mode: restore ? 'restore' : 'use',
                       }),

@@ -21,3 +21,13 @@ const missing=onTurnStart(9);assert.throws(()=>beginMultiattack(missing,ability,
 for(const override of [{cost:'reaction'},{cost:'bonus-action'},{multiattack:[]},{multiattack:[{attackId:'bite',count:1}]},{multiattack:[{attackId:'bite',count:2},{attackId:'bite',count:2}]},{multiattack:[{attackId:'bite',count:21}]}])
  assert.equal(creatureAbilitySchema.safeParse({...ability,...override}).success,false);
 console.log('✔ Composição, ordem livre, orçamento por golpe, persistência, cancelamento do turno e uma única Ação.');
+
+const special=creatureAbilitySchema.parse({id:'bite',name:'Habilidade com mesmo ID do ataque',cost:'action',execution:'assisted'});
+const composed=creatureAbilitySchema.parse({id:'mixed',name:'Composição mista',cost:'action',execution:'multiattack',multiattack:[{attackId:'bite',count:1},{kind:'ability',attackId:'bite',count:1}]});
+const mixed=onTurnStart(9);beginMultiattack(mixed,composed,attacks,'mixed-sequence',[special]);
+recordMultiattack(mixed,'mixed-sequence','bite','ability');assert.equal(mixed.multiattack!.attacks[0].remaining,1);assert.throws(()=>recordMultiattack(mixed,'mixed-sequence','bite','ability'));
+recordMultiattack(mixed,'mixed-sequence','bite');assert.equal(mixed.multiattack!.performed,2);assert.equal(mixed.actionsUsed,1);
+for(const invalid of [composed,creatureAbilitySchema.parse({...special,cost:'passive'}),creatureAbilitySchema.parse({...special,cost:'reaction',trigger:'Gatilho'})])assert.throws(()=>beginMultiattack(onTurnStart(9),composed,attacks,'invalid',[{...invalid,id:'bite'}]));
+console.log('✔ Ataques e habilidades têm quotas separadas, sem recursão, passivas ou Reações.');
+
+const exhausted=onTurnStart(9);assert.throws(()=>beginMultiattack(exhausted,composed,attacks,'spent',[{...special,maxUses:1}],{bite:1}));assert.equal(exhausted.actionsUsed,0);

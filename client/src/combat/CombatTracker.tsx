@@ -210,7 +210,7 @@ export function CombatTracker({
   npcInventory,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
-  const [areaAbilityRequest,setAreaAbilityRequest]=useState<{id:number;combatantId:string;definition:NonNullable<AreaPreviewRequest['ability']>['definition']}|null>(null);
+  const [areaAbilityRequest,setAreaAbilityRequest]=useState<{id:number;multiattackId?:string;combatantId:string;definition:NonNullable<AreaPreviewRequest['ability']>['definition']}|null>(null);
   const [inspectedToken, setInspectedToken] = useState<{ id: string; point: { x: number; y: number } } | null>(null);
   const [addingAt, setAddingAt] = useState<{ position: SpatialPosition | null; point: { x: number; y: number } } | null>(null);
   const closeAddMenu = useCallback(() => setAddingAt(null), []);
@@ -1376,7 +1376,7 @@ export function CombatTracker({
       kind={inspectedCombatant.kind === 'CHARACTER' ? 'Personagem' : inspectedCombatant.kind === 'NPC' ? 'NPC' : 'Criatura'}
       point={inspectedToken.point} onClose={closeTokenMenu}>
       <CombatTokenAdjustments combat={combat} combatant={inspectedCombatant} busy={busy}
-        effectsRefresh={effectsRefresh} onRun={action => void run(action)} onPrepareArea={(combatantId,definition)=>{setInspectedToken(null);setHotbarPick(null);setTargetCombatantId(null);setAreaAbilityRequest({id:Date.now(),combatantId,definition});}} />
+        effectsRefresh={effectsRefresh} onRun={action => void run(action)} onPrepareArea={(combatantId,definition,multiattackId)=>{setInspectedToken(null);setHotbarPick(null);setTargetCombatantId(null);setAreaAbilityRequest({id:Date.now(),combatantId,definition,multiattackId});}} />
     </CombatTokenMenu>
   ) : null;
 
@@ -1729,7 +1729,7 @@ export function CombatTracker({
                   />
                   {masterAttackerCombatant.abilities?.length ? <details className="combat-creature-ability-tray" key={masterAttackerCombatant.id}>
                     <summary>Habilidades especiais ({masterAttackerCombatant.abilities.length})</summary>
-                    <CreatureAbilitiesPanel combat={combat} combatant={masterAttackerCombatant} busy={busy} onRun={action => void run(action)} onPrepareArea={(combatantId,definition)=>{setHotbarPick(null);setTargetCombatantId(null);setAreaAbilityRequest({id:Date.now(),combatantId,definition});}} />
+                    <CreatureAbilitiesPanel combat={combat} combatant={masterAttackerCombatant} busy={busy} onRun={action => void run(action)} onPrepareArea={(combatantId,definition,multiattackId)=>{setHotbarPick(null);setTargetCombatantId(null);setAreaAbilityRequest({id:Date.now(),combatantId,definition,multiattackId});}} />
                   </details> : null}
                   </>
                 ) : null}

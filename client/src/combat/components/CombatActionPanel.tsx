@@ -300,7 +300,7 @@ export function CombatActionPanel({
   // Ataques de arma não equipada somem (só dá para avaliar com o inventário).
   const equippedAttacks = inventory ? selectAvailableAttacks(baseAttacks, inventory) : baseAttacks;
   const multiattack = !prepared && attacker?.turnEconomy.multiattack && attacker.turnEconomy.multiattack.performed < attacker.turnEconomy.multiattack.total ? attacker.turnEconomy.multiattack : null;
-  const availableAttacks = multiattack ? equippedAttacks.filter(attack=>multiattack.attacks.some(item=>item.attackId===attack.id && item.remaining>0)) : equippedAttacks;
+  const availableAttacks = multiattack ? equippedAttacks.filter(attack=>multiattack.attacks.some(item=>item.kind!=='ability' && item.attackId===attack.id && item.remaining>0)) : equippedAttacks;
   const remainingAttackIds=availableAttacks.map(attack=>attack.id).join('|');
   useEffect(()=>{
     if(multiattack && !availableAttacks.some(attack=>attack.id===attackId))setAttackId(availableAttacks[0]?.id??'');

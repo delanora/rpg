@@ -1,3 +1,4 @@
+import { canComposeAbility } from '../shared/creature-abilities.js';
 import { legendaryCandidates } from './legendary.service.js';
 import { legendaryStateOf, legendaryWindowOf, assertLegendaryTurnOpen } from '../shared/legendary-actions.js';
 import { beginMultiattack, recordMultiattack } from '../shared/multiattack.js';
@@ -2943,6 +2944,7 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
     let areaUseId:string|undefined;
     const unit = actingCombatant(combat, actor, input.combatantId);
     if (!unit.creature || unit.character) throw new HttpError('Escolha uma criatura ou NPC do bestiário.', 400);
+    if(input.multiattackId&&input.mode!=='use')throw new HttpError('A composição só pode executar um uso normal.',400,'MULTIATTACK_INVALID_CONTEXT');
     if(input.mode==='cancel-multiattack') {
       const economy=economyOf(unit.turnEconomy);
       if(!economy.multiattack || economy.multiattack.abilityId!==input.abilityId)
@@ -2979,7 +2981,10 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
         areaUseId=await beginCreatureAreaUse(db,combat,unit,ability,input.areaPlacement);
       }
       const economy = economyOf(unit.turnEconomy);
-      if(ability.execution==='multiattack')beginMultiattack(economy,ability,combatantAttacks(unit),randomUUID());
+      if(input.multiattackId){
+        if(!canComposeAbility(ability))throw new HttpError('Esta habilidade não pode integrar Ataques Múltiplos.',400,'MULTIATTACK_INVALID_CONTEXT');
+        recordMultiattack(economy,input.multiattackId,ability.id,'ability');
+      }else if(ability.execution==='multiattack')beginMultiattack(economy,ability,combatantAttacks(unit),randomUUID(),creatureAbilitiesOf(unit.creature.abilities),uses);
       else spendEconomy(economy, ability.cost);
       if(!['area-save-damage','multiattack'].includes(ability.execution))applyTacticalAction(economy, ability.execution, unit);
       if (ability.maxUses !== null) uses[ability.id] = (uses[ability.id] ?? 0) + 1;

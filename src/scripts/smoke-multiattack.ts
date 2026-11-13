@@ -65,8 +65,29 @@ async function main() {
   const restarted=await http('/combat/creature-ability',{...operation(),combatantId:source.id,abilityId:'multiple'});assert.equal(restarted.status,200);dto=restarted.data.combat;
   const cancel=await http('/combat/creature-ability',{...operation(),combatantId:source.id,abilityId:'multiple',mode:'cancel-multiattack'});assert.equal(cancel.status,200);dto=cancel.data.combat;
   assert.equal(economy().multiattack,null);assert.equal(economy().actionsUsed,1,'Abandonar não devolve a Ação');
+  // Composição genérica: uma habilidade assistida e uma área com condição.
+  const extras=[{id:'assist',name:'Efeito assistido',cost:'action',execution:'assisted'}, {id:'fear',name:'Área com condição',cost:'action',execution:'area-save-damage',area:{shape:{kind:'sphere',radiusFeet:20},rangeFeet:0,saveAbility:'wisdom',dc:20,onSuccess:'none',damage:[],conditions:['frightened']}}, {id:'mixed',name:'Ataques e habilidades',cost:'action',execution:'multiattack',multiattack:[{attackId:'bite',count:2},{kind:'ability',attackId:'assist',count:1},{kind:'ability',attackId:'fear',count:1}]}];
+  await prisma.creature.update({where:{id:creature.id},data:{abilities:[...abilities,...extras]}});
+  await prisma.combatant.update({where:{id:source.id},data:{turnEconomy:onTurnStart(9)}});dto=(await http('/combat/active')).data.combat;
+  const mixedStart=await http('/combat/creature-ability',{...operation(),combatantId:source.id,abilityId:'mixed'});assert.equal(mixedStart.status,200,JSON.stringify(mixedStart));dto=mixedStart.data.combat;
+  const mixedId=economy().multiattack.id;
+  const assistInput={...operation(),combatantId:source.id,abilityId:'assist',multiattackId:mixedId,confirmed:true};
+  const assisted=await http('/combat/creature-ability',assistInput);assert.equal(assisted.status,200,JSON.stringify(assisted));dto=assisted.data.combat;assert.equal(economy().actionsUsed,1);assert.equal(economy().multiattack.performed,1);
+  assert.equal((await http('/combat/creature-ability',assistInput)).data.replayed,true);
+  assert.equal((await http('/combat/creature-ability',{...assistInput,...operation()})).status,409,'Quota da habilidade esgotada');
+  const reading=await http(`/combat/${combatId}/creature-area-preview`,{combatantId:source.id,abilityId:'fear',placement:{origin:{xFeet:2.5,yFeet:2.5},angle:0}});assert.equal(reading.status,200);
+  const areaPlacement={origin:{xFeet:2.5,yFeet:2.5},angle:0,definitionFingerprint:reading.data.definitionFingerprint,selectedTargetKeys:[`character:${a.id}`]};
+  const areaInput={...operation(),combatantId:source.id,abilityId:'fear',multiattackId:mixedId,areaPlacement};
+  const areaResult=await http('/combat/creature-ability',areaInput);assert.equal(areaResult.status,200,JSON.stringify(areaResult));dto=areaResult.data.combat;assert.equal(economy().actionsUsed,1);assert.equal(economy().multiattack.performed,2);
+  const use=await prisma.creatureAreaUse.findFirstOrThrow({where:{combatId,abilityId:'fear'}});const {finalizeSaveDamageCast}=await import('../modules/spells/execution/save-damage-finalizer.js');
+  await prisma.$transaction(async tx=>{await tx.pendingEffectSave.updateMany({where:{creatureAreaUseId:use.id},data:{status:'resolved',result:'failure'}});await finalizeSaveDamageCast(use.id,tx,{sourceKind:'creature-ability'});});
+  assert.equal(await prisma.effectInstance.count({where:{sourceId:use.id}}),1);
+  assert.equal((await http('/combat/creature-ability',areaInput)).data.replayed,true);assert.equal(await prisma.creatureAreaUse.count({where:{combatId,abilityId:'fear'}}),1);
+  dto=(await http('/combat/active')).data.combat;
+  const mixedHit=await http('/combat/attack',{...operation(),attackerCombatantId:source.id,attackId:'bite',targetCombatantId:targetB.id,multiattackId:mixedId});assert.equal(mixedHit.status,200,JSON.stringify(mixedHit));dto=mixedHit.data.combat;assert.equal(economy().multiattack.performed,3);assert.equal(economy().actionsUsed,1);
   console.log('✔ HTTP: uma Ação, alvos diferentes, ordem livre, quotas, alcance, contexto, reconexão, retry, privacidade e encerramento.');
  } finally {
+  if(combatId){const uses=await prisma.creatureAreaUse.findMany({where:{combatId},select:{id:true}});await prisma.effectInstance.deleteMany({where:{sourceId:{in:uses.map(use=>use.id)}}});}
   if(combatId)await prisma.combat.deleteMany({where:{id:combatId}});
   if(creatureId)await prisma.creature.deleteMany({where:{id:creatureId}});
   await prisma.character.deleteMany({where:{id:{in:characters}}});await prisma.user.deleteMany({where:{id:{in:users}}});await prisma.$disconnect();

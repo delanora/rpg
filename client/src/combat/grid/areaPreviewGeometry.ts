@@ -43,7 +43,7 @@ export function previewPolygon(
   return null;
 }
 export type AreaPreviewRequest = {
-  ability?: {windowId?:string;combatantId:string;definition:CreatureAbility};
+  ability?: {multiattackId?:string;windowId?:string;combatantId:string;definition:CreatureAbility};
   id: number;
   shape: PreviewShape;
   origin: SpatialPosition;

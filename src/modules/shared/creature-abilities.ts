@@ -35,7 +35,7 @@ export const creatureAbilitySchema = z
       .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster', 'area-save-damage', 'multiattack', 'legendary-attack'])
       .default('assisted'),
     area: creatureAreaDefinitionSchema.optional(),
-    multiattack: z.array(z.object({attackId:z.string().min(1).max(160),count:z.number().int().min(1).max(20)}).strict()).min(1,'Selecione os ataques que compõem a habilidade.').max(20,'A composição aceita até 20 tipos de ataque.').optional(),
+    multiattack: z.array(z.object({kind:z.enum(['attack','ability']).optional(),attackId:z.string().min(1).max(160),count:z.number().int().min(1).max(20)}).strict()).min(1,'Selecione os ataques que compõem a habilidade.').max(20,'A composição aceita até 20 tipos de ataque.').optional(),
     legendaryCost: z.number().int().min(1).max(20).optional(),
     legendaryAttackId: z.string().min(1).max(160).optional(),
     trigger: z.string().trim().max(500).default(''),
@@ -51,7 +51,7 @@ export const creatureAbilitySchema = z
     if (value.execution === 'multiattack') {
       const entries=value.multiattack ?? [];
       const total=entries.reduce((sum,item)=>sum+item.count,0);
-      if(value.cost !== 'action' || total<2 || total>20 || new Set(entries.map(item=>item.attackId)).size!==entries.length)
+      if(value.cost !== 'action' || total<2 || total>20 || new Set(entries.map(item=>`${item.kind??'attack'}:${item.attackId}`)).size!==entries.length)
         ctx.addIssue({code:'custom',message:'Ataques Múltiplos exige uma Ação e entre 2 e 20 ataques, sem linhas repetidas.'});
     }
     if (value.recharge && (value.cost === 'passive' || value.maxUses !== 1))
@@ -125,3 +125,6 @@ export function rechargeCreatureAbilities(
 export function creatureRechargeLabel(minimum: number): string {
   return minimum === 6 ? 'Recarga 6' : `Recarga ${minimum}–6`;
 }
+
+/** Opções ativas elegíveis para uma composição, sem recursão nem economia especial. */
+export function canComposeAbility(ability:CreatureAbility):boolean {return ['action','bonus-action'].includes(ability.cost)&&ability.execution!=='multiattack';}

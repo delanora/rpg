@@ -117,7 +117,7 @@ export interface GridTargeting {
 }
 
 export interface CombatGridProps {
-  areaAbilityRequest?: {id:number;combatantId:string;definition:NonNullable<AreaPreviewRequest['ability']>['definition']}|null;
+  areaAbilityRequest?: {id:number;multiattackId?:string;combatantId:string;definition:NonNullable<AreaPreviewRequest['ability']>['definition']}|null;
   /**
    * Estado AUTORITATIVO vindo do servidor (`Combat.spatial` + `Combatant.spatial`).
    * O grid não mantém segunda fonte de posição: `onCombatChange` recebe o DTO
@@ -439,7 +439,7 @@ export function CombatGrid({
     if(!space||!areaAbilityRequest.definition.area){onError('Posicione a criatura no grid antes de preparar a área.');return;}
     areaAbilityHandled.current=areaAbilityRequest.id;
     setMode('none');
-    setAreaRequest({id:++areaRequestId.current,shape:areaAbilityRequest.definition.area.shape.kind,origin:{xFeet:(space.minXFeet+space.maxXFeet)/2,yFeet:(space.minYFeet+space.maxYFeet)/2},ability:{windowId:combat.legendaryWindow?.id,combatantId:areaAbilityRequest.combatantId,definition:areaAbilityRequest.definition},scope:areaSceneKey});
+    setAreaRequest({id:++areaRequestId.current,shape:areaAbilityRequest.definition.area.shape.kind,origin:{xFeet:(space.minXFeet+space.maxXFeet)/2,yFeet:(space.minYFeet+space.maxYFeet)/2},ability:{multiattackId:areaAbilityRequest.multiattackId,windowId:combat.legendaryWindow?.id,combatantId:areaAbilityRequest.combatantId,definition:areaAbilityRequest.definition},scope:areaSceneKey});
   },[areaAbilityRequest,isMaster,areaSceneKey,combat.combatants,onError]);
 
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;

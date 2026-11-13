@@ -41,7 +41,7 @@ export const turnEconomySchema = z.object({
   /** Ação própria de criatura, separada de Attack Action/Ataque Extra. */
   multiattack: z.object({
     id:z.string(),abilityId:z.string(),label:z.string(),
-    attacks:z.array(z.object({attackId:z.string(),name:z.string().default('Ataque'),remaining:z.number().int().nonnegative()})),
+    attacks:z.array(z.object({kind:z.enum(['attack','ability']).optional(),attackId:z.string(),name:z.string().default('Ataque'),remaining:z.number().int().nonnegative()})),
     performed:z.number().int().nonnegative(),total:z.number().int().min(2).max(20),
   }).nullable().default(null),
   /** Armas leves usadas em Attack Action: mão secundária exige OUTRA arma. */

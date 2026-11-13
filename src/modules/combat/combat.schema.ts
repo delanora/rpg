@@ -345,6 +345,7 @@ export const creatureAreaPreviewSchema = z.object({
 
 /** Habilidade cadastrada: custo e efeito nunca vêm do pedido. */
 export const creatureAbilityUseSchema = combatOperationSchema.extend({
+  multiattackId:z.string().min(1).optional(),
   combatantId: z.string().min(1),
   abilityId: z.string().min(1),
   areaPlacement: creatureAreaPlacementSchema.optional(),

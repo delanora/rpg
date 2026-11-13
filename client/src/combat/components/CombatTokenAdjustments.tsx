@@ -11,7 +11,7 @@ import { MasterEconomyPanel } from './MasterEconomyPanel';
 /** Todos os comandos recebem o token inspecionado, sem assumir ou trocar seu turno. */
 export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh, onRun, onPrepareArea }: {
   combat: CombatDto; combatant: CombatantDto; busy: boolean; effectsRefresh: number;
-  onPrepareArea?: (combatantId: string, definition: CreatureAbility) => void;
+  onPrepareArea?: (combatantId: string, definition: CreatureAbility, multiattackId?:string) => void;
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [tab, setTab] = useState<'conditions' | 'hp' | 'economy' | 'relation' | 'abilities' | 'height'>('conditions');

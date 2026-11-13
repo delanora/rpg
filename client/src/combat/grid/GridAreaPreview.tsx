@@ -335,6 +335,7 @@ export function GridAreaPreview({
       const windowId=intention.context.windowId;
       if(legendary&&!windowId)throw new Error('A janela lendária já terminou.');
       const input = {
+        ...(intention.context.multiattackId?{multiattackId:intention.context.multiattackId}:{}),
         combatantId: intention.context.combatantId,
         abilityId: intention.context.definition.id,
         areaPlacement: intention.placement,
