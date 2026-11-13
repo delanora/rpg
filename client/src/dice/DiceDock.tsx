@@ -249,6 +249,7 @@ export function DiceDock({ roller }: DiceDockProps) {
                       )}
                     </div>
                   </div>
+                  {!deathSave?<img className="dice-common-frame" src="/dice-tray/moldura.png" alt="" aria-hidden="true" draggable={false} decoding="sync"/>:null}
                 </div>
 
                 {deathSave ? <DeathSaveTitle /> : null}

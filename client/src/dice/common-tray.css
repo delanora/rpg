@@ -2,6 +2,7 @@
 .dice-overlay.is-standard-roll {
   background: radial-gradient(circle at 50% 40%, rgb(14 18 23 / 72%), rgb(3 4 7 / 94%));
   backdrop-filter: blur(7px);
+  animation: common-tray-appear 0.22s ease-out backwards;
 }
 
 .dice-stage.is-standard-roll {
@@ -17,6 +18,7 @@
   --gold-deep: #bd9555;
   --gold-bright: #edce8e;
   color: var(--ink);
+  animation: common-tray-appear 0.24s ease-out backwards;
   background: url('/dice-tray/fundo.png') center / cover no-repeat, #0b0d11;
   border: 1px solid var(--line-strong);
   border-radius: 16px;
@@ -45,15 +47,26 @@
   background: none;
   box-shadow: none;
   isolation: isolate;
+  animation: common-tray-appear 0.35s ease-out backwards;
 }
 
-.dice-stage.is-standard-roll .dice-ring::after {
-  inset: -2%;
+/* A imagem nativa evita rasterizar novamente o aro com filtros e transformações. */
+.dice-stage.is-standard-roll .dice-ring::after { display: none; }
+.dice-stage.is-standard-roll .dice-common-frame {
+  position: absolute;
+  left: -5%;
+  top: -5%;
+  width: 110%;
+  height: 110%;
+  max-width: none;
+  object-fit: contain;
+  pointer-events: none;
   z-index: 2;
-  border-radius: 0;
-  background: url('/dice-tray/moldura.png') center / 106% 106% no-repeat;
-  box-shadow: none;
-  filter: drop-shadow(0 4px 5px rgb(0 0 0 / 70%));
+}
+
+@keyframes common-tray-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .dice-stage.is-standard-roll .dice-ring-inner {
