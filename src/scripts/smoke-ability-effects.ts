@@ -18,7 +18,7 @@ async function main() {
   const http=async(path:string,body?:unknown,actor=master)=>{const response=await fetch(base+'/api'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token(actor),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json() as any};};
   assert.equal((await http('/characters/me',undefined,player)).data.character.id,a.id,'Sentinela HTTP comprova schema antes das operações');
   const area={shape:{kind:'sphere',radiusFeet:30},rangeFeet:0,saveAbility:'wisdom',dc:20,onSuccess:'none',damage:[],conditions:['frightened']};
-  const abilities=[{id:'fear',name:'Condição genérica',cost:'action',execution:'area-save-damage',area},{id:'wings',name:'Área lendária genérica',cost:'legendary',execution:'area-save-damage',legendaryCost:2,area:{...area,saveAbility:'dexterity',conditions:['prone'],damage:[{type:'Concussão',dice:{count:2,sides:6}}]}}];
+  const abilities=[{id:'fear',name:'Condição genérica',cost:'action',execution:'area-save-damage',area},{id:'wings',name:'Área lendária genérica',cost:'legendary',execution:'area-save-damage',legendaryCost:2,area:{...area,saveAbility:'dexterity',conditions:['prone'],onSuccess:'half',damage:[{bonus:10,type:'Concussão',dice:{count:2,sides:6}}]}}];
   const creature=await prisma.creature.create({data:{name:'Origem isolada',hpMax:1000,hpCurrent:1000,abilities,legendaryActionsMax:3}});creatureId=creature.id;
   const combat=await prisma.combat.create({data:{status:'ACTIVE',turnSequence:1,currentIndex:0,spatialConfig:{mode:'grid-2d',widthFeet:100,heightFeet:100,cellSizeFeet:5}}});combatId=combat.id;
   const source=await prisma.combatant.create({data:{combatId,creatureId,kind:'CREATURE',name:'Origem',initiative:30,dexterityMod:0,hpCurrent:1000,hpMax:1000,spatialPosition:{xFeet:0,yFeet:0},turnEconomy:onTurnStart(9)}});
@@ -47,6 +47,7 @@ async function main() {
   // Área lendária reutiliza o mesmo fluxo e cobra exclusivamente o saldo próprio.
   await prisma.combat.update({where:{id:combatId},data:{currentIndex:1,legendaryWindow:{id:'fixture-window',turnSequence:1,outgoingId:hero.id,candidateIds:[source.id],decidedIds:[]}}});
   dto=(await http('/combat/active')).data.combat;
+  await prisma.character.update({where:{id:b.id},data:{raceResistances:['Concussão']}});
   const normal=(await prisma.combatant.findUniqueOrThrow({where:{id:source.id}})).turnEconomy;
   const legendInput={...op(),windowId:'fixture-window',combatantId:source.id,abilityId:'wings',areaPlacement:await placement('wings',[`character:${a.id}`,`character:${b.id}`])};
   assert.equal((await http('/combat/legendary/use',legendInput,player)).status,403);
@@ -56,7 +57,8 @@ async function main() {
   assert.equal(await prisma.pendingEffectSave.count({where:{creatureAreaUseId:second.id}}),2);
   await prisma.$transaction(async tx=>{const rows=await tx.pendingEffectSave.findMany({where:{creatureAreaUseId:second.id}});for(const row of rows)await tx.pendingEffectSave.update({where:{id:row.id},data:{status:'resolved',result:row.targetEntityId===a.id?'failure':'success'}});await finalizeSaveDamageCast(second.id,tx,{sourceKind:'creature-ability',roll:()=>3});});
   assert.equal(await prisma.effectInstance.count({where:{sourceId:second.id}}),1,'Sucesso não recebe condição');
-  assert.equal((await prisma.character.findUniqueOrThrow({where:{id:a.id}})).hpCurrent,994);assert.equal((await prisma.character.findUniqueOrThrow({where:{id:b.id}})).hpCurrent,1000);
+  assert.equal((await prisma.character.findUniqueOrThrow({where:{id:a.id}})).hpCurrent,984);assert.equal((await prisma.character.findUniqueOrThrow({where:{id:b.id}})).hpCurrent,996);
+  const snapshot=(await prisma.creatureAreaUse.findUniqueOrThrow({where:{id:second.id}})).resolutionSnapshot as any;assert.equal(snapshot.damageRoll.rawDamage,16);assert.equal(snapshot.damageRoll.components[0].bonus,10);assert.deepEqual(snapshot.damageRoll.components[0].rolls,[3,3]);
   assert.equal((await http('/combat/legendary/use',legendInput)).data.replayed,true);assert.equal((await prisma.combatant.findUniqueOrThrow({where:{id:source.id}})).legendaryState&& (unit.legendaryState as any).used,2);
   console.log('✔ Condições sem dano, seleção de alvos, efeitos removíveis, retry, dano com condição e área lendária com saldo próprio.');
  } finally {

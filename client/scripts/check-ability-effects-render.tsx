@@ -9,9 +9,7 @@ globals.HTMLElement=dom.window.HTMLElement;globals.Node=dom.window.Node;
 globals.localStorage=dom.window.localStorage; globals.window = dom.window; globals.document = dom.window.document; globals.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement:h, act, useState } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { renderToStaticMarkup } = await import('react-dom/server');
 const { CreatureAbilitiesEditor } = await import('../src/components/master/CreatureAbilitiesEditor');
-const { CreatureAbilitiesPanel } = await import('../src/combat/components/CreatureAbilitiesPanel');
 import type { CreatureAbility, CombatDto, CombatantDto, Attack } from '../src/types';
 let saved:CreatureAbility[]=[];
 function Harness() {
@@ -35,6 +33,7 @@ async function change(label:string,value:string) {
 try {
  await act(async()=>root.render(h(Harness)));
  await click('Adicionar habilidade');await change('Nome da habilidade','Efeito genérico');await change('Execução da habilidade','area-save-damage');
+ await change('Bônus de dano 1','10');await click('Salvar habilidade');assert.equal(saved[0].area!.damage[0].bonus,10);await click('Editar habilidade');
  await act(async()=>document.querySelector<HTMLInputElement>('[aria-label="Causar dano na falha"]')!.click());
  const label=[...document.querySelectorAll('label')].find(row=>row.textContent?.trim()==='Amedrontado')!;assert.ok(label);
  await act(async()=>label.querySelector<HTMLInputElement>('input')!.click());await click('Salvar habilidade');

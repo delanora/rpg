@@ -252,6 +252,10 @@ export function CreatureAreaFields({
             </select>
           </label>
           <label>
+            Bônus de dano
+            <input aria-label={`Bônus de dano ${index + 1}`} type="number" min={-9999} max={9999} step={1} value={component.bonus??0} onChange={event=>onChange({...value,damage:value.damage.map((row,i)=>i===index?{...row,bonus:Number(event.target.value)}:row)})}/>
+          </label>
+          <label>
             Tipo de dano
             <select
               aria-label={`Tipo de dano ${index + 1}`}

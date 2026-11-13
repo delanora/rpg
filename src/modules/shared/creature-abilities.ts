@@ -14,7 +14,7 @@ export const creatureAreaDefinitionSchema=z.object({
  saveAbility:z.enum(['strength','dexterity','constitution','intelligence','wisdom','charisma']),
  dc:z.number().int().min(1).max(40),
  onSuccess:z.enum(['half','none']).default('half'),
- damage:z.array(z.object({type:z.enum(DAMAGE_TYPES),dice:z.object({count:z.number().int().min(1).max(100),sides:z.union([z.literal(4),z.literal(6),z.literal(8),z.literal(10),z.literal(12),z.literal(20)])}).strict()}).strict()).min(0).max(5),
+ damage:z.array(z.object({bonus:z.number().int().min(-9999).max(9999).optional(),type:z.enum(DAMAGE_TYPES),dice:z.object({count:z.number().int().min(1).max(100),sides:z.union([z.literal(4),z.literal(6),z.literal(8),z.literal(10),z.literal(12),z.literal(20)])}).strict()}).strict()).min(0).max(5),
 }).strict();
 export type CreatureAreaDefinition=z.infer<typeof creatureAreaDefinitionSchema>;
 /** Definição do cadastro; o gasto pertence a cada instância do combate. */

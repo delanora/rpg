@@ -221,6 +221,7 @@ export function normalizeAttackDamageSnapshot(
 export const saveDamageShareSnapshotSchema = z.enum(['none', 'half', 'full']);
 
 export const sharedDamageRollComponentSchema = z.object({
+  bonus: z.number().int().optional(),
   type: z.string().nullable(),
   count: z.number().int().nonnegative(),
   sides: z.number().int().nonnegative(),

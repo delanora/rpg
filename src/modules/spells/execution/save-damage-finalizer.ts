@@ -206,8 +206,9 @@ export async function finalizeSaveDamageCast(
           const dice = scaledDice(component.dice, component.scaling, scalingLevel);
           const count = Math.max(0, dice.count);
           const rolls = Array.from({ length: count }, () => roll(dice.sides));
-          const raw = Math.max(0, rolls.reduce((sum, value) => sum + value, 0));
-          return { type: component.type, count, sides: dice.sides, rolls, raw };
+          const bonus = component.bonus ?? 0;
+          const raw = Math.max(0, rolls.reduce((sum, value) => sum + value, 0) + bonus);
+          return { type: component.type, count, sides: dice.sides, rolls, ...(component.bonus !== undefined ? { bonus } : {}), raw };
         });
         return {
           id: sharedDamageRollIdOf(castId,0,sourceKind),

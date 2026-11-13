@@ -85,6 +85,8 @@ export type SpellResolutionDefinition =
           type: string;
           /** Dados BASE (sem o escalonamento de truque). */
           dice: { count: number; sides: number };
+          /** Parcela fixa somada aos dados antes da salvaguarda e das defesas. */
+          bonus?: number;
           /** Escalonamento por nível TOTAL de personagem (truques). */
           scaling?: LevelScalingDefinition;
         }[];
