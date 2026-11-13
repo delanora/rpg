@@ -23,7 +23,7 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
   const valid = Number.isInteger(value) && value >= 1 && value <= 9999;
   return <>
     <div className="combat-token-menu-tabs" role="group" aria-label="Tipo de ajuste">
-      {([['conditions', 'Condições e efeitos'], ['hp', 'Vida'], ['economy', 'Economia'], ['relation', 'Relação'], ['height', 'Altura'], ...(combatant.creatureId ? [['abilities', 'Habilidades'] as const] : [])] as const).map(([key, label]) =>
+      {([['conditions', 'Condições e efeitos'], ['hp', 'Vida'], ['economy', 'Economia'], ['relation', 'Relação'], ['height', 'Altura'], ...(combatant.creatureId ? [['abilities', 'Ações'] as const] : [])] as const).map(([key, label]) =>
         <button key={key} type="button" className={tab === key ? 'active' : ''}
           aria-pressed={tab === key} disabled={key === 'economy' && combat.status !== 'ACTIVE'}
           title={key === 'economy' && combat.status !== 'ACTIVE' ? 'Disponível após a iniciativa.' : undefined} onClick={() => setTab(key)}>{label}</button>)}

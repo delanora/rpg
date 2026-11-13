@@ -38,7 +38,7 @@ export function CreatureAbilitiesPanel({
       </article>:null}
       {!abilities.length ? (
         <p className="section-note">
-          {combatant.legendary?.max ? 'Opções lendárias disponíveis na janela de fim de turno.' : 'Nenhuma habilidade especial cadastrada no bestiário.'}
+          {combatant.legendary?.max ? 'Opções lendárias disponíveis na janela de fim de turno.' : 'Nenhuma ação cadastrada no bestiário.'}
         </p>
       ) : null}
       {abilities.map((ability) => {
@@ -88,7 +88,7 @@ export function CreatureAbilitiesPanel({
                   disabled={busy || unavailable}
                   onClick={() => ability.execution==='area-save-damage' ? onPrepareArea?.(combatant.id,ability,compositionId) : setSelected(ability.id)}
                 >
-                  {ability.execution==='area-save-damage'?'Preparar área':'Usar habilidade'}
+                  {ability.execution==='area-save-damage'?'Preparar área':'Usar ação'}
                 </button>
                 {ability.maxUses !== null && used > 0 ? (
                   <button

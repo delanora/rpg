@@ -86,11 +86,11 @@ await act(async () =>
     }),
   ),
 );
-await click('Adicionar habilidade');
-await change('Nome da habilidade', 'Talento do conjurador');
-await change('Custo da habilidade', 'passive');
-await change('Execução da habilidade', 'war-caster');
-await click('Salvar habilidade');
+await click('Adicionar ação');
+await change('Nome da ação', 'Talento do conjurador');
+await change('Custo da ação', 'passive');
+await change('Execução da ação', 'war-caster');
+await click('Salvar ação');
 assert.equal(saved[0]?.execution, 'war-caster');
 assert.equal(saved[0].cost, 'passive');
 assert.equal(saved[0].maxUses, null);

@@ -119,7 +119,7 @@ export function CreatureEditor({
   const steps = [
     'Identidade e imagens',
     'Estatísticas',
-    'Ações e habilidades',
+    'Ações',
     'Magias',
     'Revisão',
   ];
@@ -731,28 +731,23 @@ export function CreatureEditor({
           </Section>
         ) : null}
 
-        {step === 2 ? (
-          <Section title="Ataques" icon="sword">
-            <p className="section-note">
-              Informe o alcance corpo a corpo de cada ataque para habilitar sua
-              área de ameaça e os ataques de oportunidade.
-            </p>
-            <CreatureAttackCards
-              attacks={creature.attacks}
-              defaultBonus={attackBonus}
-              onEditingChange={setAttackEditing}
-              onChange={(attacks) => onPatch({ attacks })}
-            />
-          </Section>
-        ) : null}
-
-        {step === 2 ? <Section title="Habilidades especiais" icon="sparkle">
-          <label className="field">Limite de Ações Lendárias por ciclo
-            <input aria-label="Limite de Ações Lendárias" type="number" min={0} max={20} value={creature.legendaryActionsMax??0} onChange={event=>onPatch({legendaryActionsMax:Number(event.target.value)})}/>
-            <small>0 = sem Ações Lendárias. O saldo se recupera no início do turno da criatura.</small>
-          </label>
-          <CreatureAbilitiesEditor legendaryActionsMax={creature.legendaryActionsMax??0} attacks={creature.attacks ?? []} abilities={creature.abilities ?? []} onChange={abilities => onPatch({ abilities })} onEditingChange={setAbilityEditing} />
-        </Section> : null}
+        {step === 2 ? <Section title="Ações" icon="sword">
+          <CreatureAbilitiesEditor
+            legendaryActionsMax={creature.legendaryActionsMax??0}
+            attacks={creature.attacks??[]}
+            abilities={creature.abilities??[]}
+            onChange={abilities=>onPatch({abilities})}
+            onEditingChange={setAbilityEditing}
+            attackEditor={<>
+              <p className="section-note">Informe o alcance de cada ataque para habilitar sua área de ameaça e os ataques de oportunidade.</p>
+              <CreatureAttackCards attacks={creature.attacks} defaultBonus={attackBonus} onEditingChange={setAttackEditing} onChange={attacks=>onPatch({attacks})}/>
+            </>}
+            legendarySettings={<label className="field">Limite de Ações Lendárias por ciclo
+              <input aria-label="Limite de Ações Lendárias" type="number" min={0} max={20} value={creature.legendaryActionsMax??0} onChange={event=>onPatch({legendaryActionsMax:Number(event.target.value)})}/>
+              <small>0 = sem Ações Lendárias. O saldo se recupera no início do turno da criatura.</small>
+            </label>}
+          />
+        </Section>:null}
 
         {step === 4 && !creating && creature.kind === 'NPC' ? (
           <NpcInventorySection
@@ -847,7 +842,7 @@ export function CreatureEditor({
                 <strong>{creature.speed} m</strong> Deslocamento
               </span>
               <span>
-                <strong>{creature.attacks.length}</strong> Ataques
+                <strong>{creature.attacks.length+(creature.abilities?.filter(item=>item.cost!=='legendary').length??0)}</strong> Ações
               </span>
               <span>
                 <strong>
@@ -860,10 +855,11 @@ export function CreatureEditor({
               Localidades: {creature.localities.map((l) => l.name).join(', ')}
             </p>
             <p>
-              Ataques:{' '}
+              Ações de ataque:{' '}
               {creature.attacks.map((a) => a.name).join(', ') || 'Nenhum'}
             </p>
-            <p>Habilidades: {creature.abilities?.map(item => item.name).join(', ') || 'Nenhuma'}</p>
+            <p>Ações adicionais: {creature.abilities?.filter(item=>item.cost!=='legendary').map(item=>item.name).join(', ')||'Nenhuma'}</p>
+            {creature.abilities?.some(item=>item.cost==='legendary')?<p>Ações Lendárias: {creature.abilities.filter(item=>item.cost==='legendary').map(item=>item.name).join(', ')}</p>:null}
             {!creating ? (
               <details>
                 <summary>Condições e estado atual</summary>

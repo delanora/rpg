@@ -28,8 +28,8 @@ async function select(value:string) {
 }
 try {
  await act(async()=>root.render(h(Harness)));
- await click('Adicionar habilidade');
- const name=document.querySelector<HTMLInputElement>('[aria-label="Nome da habilidade"]')!;
+ await click('Adicionar ação');
+ const name=document.querySelector<HTMLInputElement>('[aria-label="Nome da ação"]')!;
  await act(async()=>{
   Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(name,'Sopro de prova');
   name.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
@@ -37,12 +37,12 @@ try {
  await select('5');
  const uses=document.querySelector<HTMLInputElement>('[aria-label="Usos da habilidade"]')!;
  assert.equal(uses.value,'1'); assert.equal(uses.disabled,true);
- await click('Salvar habilidade');
+ await click('Salvar ação');
  assert.deepEqual(saved[0].recharge,{minimum:5}); assert.equal(saved[0].maxUses,1);
  assert.ok(document.body.textContent?.includes('Recarga 5–6'));
- await click('Editar habilidade'); await select('');
+ await click('Editar ação'); await select('');
  assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Usos da habilidade"]')!.disabled,false);
- await click('Salvar habilidade'); assert.equal(saved[0].recharge,undefined);
+ await click('Salvar ação'); assert.equal(saved[0].recharge,undefined);
  const unit={id:'copy',creatureId:'creature',hpCurrent:30,conditionEffects:{canAct:true},turnEconomy:{actionsUsed:0,actionsGranted:1,bonusActionUsed:false,reactionAvailable:true},abilities:[{...saved[0],recharge:{minimum:5}}],abilityUses:{[saved[0].id]:1}} as unknown as CombatantDto;
  const markup=renderToStaticMarkup(h(CreatureAbilitiesPanel,{combat:{status:'ACTIVE',currentCombatantId:unit.id} as CombatDto,combatant:unit,busy:false,onRun:()=>{}}));
  assert.match(markup,/Aguardando recarga/); assert.match(markup,/disabled=""/); assert.match(markup,/Restaurar usos/);

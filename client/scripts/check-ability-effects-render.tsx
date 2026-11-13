@@ -14,7 +14,7 @@ import type { CreatureAbility, CombatDto, CombatantDto, Attack } from '../src/ty
 let saved:CreatureAbility[]=[];
 function Harness() {
   const [abilities,setAbilities] = useState<CreatureAbility[]>([]);
-  return h(CreatureAbilitiesEditor,{attacks,abilities,onChange:(value:CreatureAbility[])=>{saved=value;setAbilities(value);},onEditingChange:()=>{}});
+  return h(CreatureAbilitiesEditor,{legendaryActionsMax:3,attacks,abilities,onChange:(value:CreatureAbility[])=>{saved=value;setAbilities(value);},onEditingChange:()=>{}});
 }
 const attacks=[{id:'bite',name:'Mordida',attackBonus:5,damage:{count:1,sides:6,bonus:2,type:'Perfurante'},extraDamages:[],notes:'',ranged:false,finesse:false,legacy:false},{id:'claw',name:'Garra',attackBonus:5,damage:{count:1,sides:4,bonus:2,type:'Cortante'},extraDamages:[],notes:'',ranged:false,finesse:false,legacy:false}] as Attack[];
 const root = createRoot(document.getElementById('root')!);
@@ -32,12 +32,20 @@ async function change(label:string,value:string) {
 }
 try {
  await act(async()=>root.render(h(Harness)));
- await click('Adicionar habilidade');await change('Nome da habilidade','Efeito genérico');await change('Execução da habilidade','area-save-damage');
- await change('Bônus de dano 1','10');await click('Salvar habilidade');assert.equal(saved[0].area!.damage[0].bonus,10);await click('Editar habilidade');
+ await click('Adicionar ação');await change('Nome da ação','Efeito genérico');await change('Execução da ação','area-save-damage');
+ await change('Bônus de dano 1','10');await click('Salvar ação');assert.equal(saved[0].area!.damage[0].bonus,10);await click('Editar ação');
  await act(async()=>document.querySelector<HTMLInputElement>('[aria-label="Causar dano na falha"]')!.click());
  const label=[...document.querySelectorAll('label')].find(row=>row.textContent?.trim()==='Amedrontado')!;assert.ok(label);
- await act(async()=>label.querySelector<HTMLInputElement>('input')!.click());await click('Salvar habilidade');
+ await act(async()=>label.querySelector<HTMLInputElement>('input')!.click());await click('Salvar ação');
  assert.equal(saved[0].area!.damage.length,0);assert.deepEqual(saved[0].area!.conditions,['frightened']);
+ assert.equal(document.querySelector('[aria-label="Ações Lendárias cadastradas"]'),null);
+ await click('Editar ação');await change('Custo da ação','legendary');
+ assert.ok(document.querySelector('[aria-label="Ações Lendárias cadastradas"] [aria-label="Nome da ação"]'),'Formulário acompanha a categoria lendária');
+ assert.equal(document.querySelector('[aria-label="Ações cadastradas"] [aria-label="Nome da ação"]'),null);
+ await change('Ação base da opção lendária','bite');assert.equal((document.querySelector('[aria-label="Execução da ação"]') as HTMLSelectElement).value,'legendary-attack');
+ await change('Custo da ação','action');assert.equal(document.querySelector('[aria-label="Ações Lendárias cadastradas"]'),null);await click('Cancelar ação');
+ await click('Adicionar ação');await change('Custo da ação','legendary');await change('Ação base da opção lendária',`ability:${saved[0].id}`);await click('Salvar ação');assert.equal(saved.length,2);assert.equal(saved[0].cost,'action');assert.equal(saved[1].cost,'legendary');assert.deepEqual(saved[1].area,saved[0].area);
+
  const {LegendaryActionsPanel}=await import('../src/combat/components/LegendaryActionsPanel');
  const ability={...saved[0],cost:'legendary',legendaryCost:2};
  const unit={id:'source',name:'Origem',hpCurrent:100,conditionEffects:{canAct:true},legendary:{max:3,used:0,firstTurnEnded:true},abilities:[ability]} as unknown as CombatantDto;

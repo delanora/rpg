@@ -1,5 +1,5 @@
 import { CreatureAreaFields, defaultCreatureArea } from './CreatureAreaFields';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CreatureAbility } from '../../types';
 import {
   canComposeAbility,
@@ -15,8 +15,12 @@ export function CreatureAbilitiesEditor({
   onEditingChange,
   attacks = [],
   legendaryActionsMax = 0,
+  attackEditor,
+  legendarySettings,
 }: {
   abilities: CreatureAbility[];
+  attackEditor?:ReactNode;
+  legendarySettings?:ReactNode;
   attacks?: {id:string;name:string}[];
   legendaryActionsMax?: number;
   onChange: (value: CreatureAbility[]) => void;
@@ -30,7 +34,7 @@ export function CreatureAbilitiesEditor({
   useEffect(() => {
     if (draft)
       formRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
-  }, [draft?.id]);
+  }, [draft?.id,draft?.cost]);
   function edit(value: CreatureAbility | null) {
     setDraft(value);
     setError('');
@@ -56,82 +60,7 @@ export function CreatureAbilitiesEditor({
     );
     edit(null);
   }
-  return (
-    <div className="creature-attacks">
-      <div className="creature-section-heading">
-        <p>
-          Cadastre opções especiais e características. Cada cópia controla seus
-          próprios usos.
-        </p>
-        <button
-          type="button"
-          className="btn btn-small"
-          disabled={!!draft}
-          onClick={() =>
-            edit({
-              id: createOperationId(),
-              name: '',
-              description: '',
-              cost: 'action',
-              execution: 'assisted',
-              trigger: '',
-              maxUses: null,
-            })
-          }
-        >
-          Adicionar habilidade
-        </button>
-      </div>
-      {!draft ? (
-        <div
-          className="creature-card-actions"
-          aria-label="Modelos de habilidade"
-        >
-          <span>Começar com:</span>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() =>
-              edit({
-                id: createOperationId(),
-                name: 'Desengajar',
-                cost: 'bonus-action',
-                execution: 'disengage',
-                description: 'Esta criatura pode Desengajar como ação bônus.',
-                trigger: '',
-                maxUses: null,
-              })
-            }
-          >
-            Desengajar como bônus
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() =>
-              edit({
-                id: createOperationId(),
-                name: 'Esconder-se',
-                cost: 'bonus-action',
-                execution: 'assisted',
-                description:
-                  'Esta criatura pode tentar se esconder como ação bônus. O Mestre verifica as circunstâncias e resolve o teste.',
-                trigger: '',
-                maxUses: null,
-              })
-            }
-          >
-            Esconder-se como bônus
-          </button>
-        </div>
-      ) : null}
-      {!abilities.length && !draft ? (
-        <p className="empty-hint">
-          Exemplos: Desengajar como ação bônus, Esconder-se ou uma
-          característica passiva.
-        </p>
-      ) : null}
-      {abilities.map((item) => (
+  const renderAction=(item:CreatureAbility)=>(
         <article className="creature-attack-card" key={item.id}>
           <div>
             <h4>{item.name}</h4>
@@ -156,17 +85,17 @@ export function CreatureAbilitiesEditor({
             disabled={!!draft}
             onClick={() => edit({ ...item })}
           >
-            Editar habilidade
+            Editar ação
           </button>
         </article>
-      ))}
-      {draft ? (
+  );
+  const actionForm=draft ? (
         <div className="creature-attack-form" ref={formRef}>
           <div className="creature-form-grid">
             <label>
-              Nome da habilidade
+              Nome da ação
               <input
-                aria-label="Nome da habilidade"
+                aria-label="Nome da ação"
                 maxLength={120}
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -175,7 +104,7 @@ export function CreatureAbilitiesEditor({
             <label>
               Custo
               <select
-                aria-label="Custo da habilidade"
+                aria-label="Custo da ação"
                 value={draft.cost}
                 onChange={(e) =>
                   setDraft({
@@ -200,7 +129,7 @@ export function CreatureAbilitiesEditor({
             <label>
               Execução
               <select
-                aria-label="Execução da habilidade"
+                aria-label="Execução da ação"
                 value={draft.execution}
                 disabled={draft.cost === 'reaction'}
                 onChange={(e) =>
@@ -252,7 +181,7 @@ export function CreatureAbilitiesEditor({
             ) : null}
           {draft.cost !== 'passive' && draft.cost !== 'legendary' ? (
             <label>
-              Recuperação da habilidade
+              Recuperação da ação
               <select aria-label="Recarga da habilidade" value={draft.recharge?.minimum ?? ''}
                 onChange={e => setDraft({ ...draft, recharge: e.target.value ? { minimum: Number(e.target.value) } : undefined,
                   ...(e.target.value ? { maxUses: 1 } : {}) })}>
@@ -264,6 +193,13 @@ export function CreatureAbilitiesEditor({
           ) : null}
           </div>
           {draft.cost==='legendary'?<div className="creature-form-grid">
+            <label>Preencher com uma ação cadastrada<select aria-label="Ação base da opção lendária" value="" onChange={event=>{
+              const key=event.target.value;
+              if(key.startsWith('ability:')){
+                const base=abilities.find(item=>item.id===key.slice(8));
+                if(base)setDraft({...draft,name:draft.name||base.name,description:base.description,execution:base.execution==='area-save-damage'?'area-save-damage':'assisted',area:base.area,legendaryAttackId:undefined});
+              }else if(key){const base=attacks.find(item=>item.id===key);if(base)setDraft({...draft,name:draft.name||base.name,execution:'legendary-attack',legendaryAttackId:base.id});}
+            }}><option value="">Selecionar ação…</option>{compositionOptions.map(option=><option key={`${option.kind}:${option.id}`} value={entryKey({attackId:option.id,kind:option.kind})}>{option.name}</option>)}</select><small>Preenche esta opção lendária; o custo e os usos são próprios dela. Efeitos sem execução lendária automática ficam assistidos.</small></label>
             <label>Custo lendário<input aria-label="Custo da Ação Lendária" type="number" min={1} max={20} value={draft.legendaryCost??1} onChange={event=>setDraft({...draft,legendaryCost:Number(event.target.value)})}/></label>
             {draft.execution==='legendary-attack'?<label>Ataque<select aria-label="Ataque da Ação Lendária" value={draft.legendaryAttackId??''} onChange={event=>setDraft({...draft,legendaryAttackId:event.target.value})}>
               <option value="">Escolha um ataque</option>{attacks.map(attack=><option key={attack.id} value={attack.id}>{attack.name}</option>)}
@@ -272,20 +208,20 @@ export function CreatureAbilitiesEditor({
           </div>:null}
           {draft.execution==='multiattack'?<div className="creature-attacks">
             <h4>Composição dos Ataques Múltiplos</h4>
-            <p>Escolha ataques, habilidades especiais e quantidades. A sequência consome uma Ação; os usos e recargas das habilidades continuam valendo.</p>
-            {!compositionOptions.length?<p className="section-note">Cadastre ataques ou habilidades ativas antes de montar esta composição.</p>:null}
+            <p>Escolha as ações e quantidades. A sequência consome uma Ação; os usos e recargas das habilidades continuam valendo.</p>
+            {!compositionOptions.length?<p className="section-note">Cadastre ações antes de montar esta composição.</p>:null}
             {(draft.multiattack??[]).map((entry,index)=><div className="creature-form-grid" key={index}>
-              <label>Ataque ou habilidade<select aria-label={`Ataque múltiplo ${index+1}`} value={entryKey(entry)}
+              <label>Ação<select aria-label={`Ataque múltiplo ${index+1}`} value={entryKey(entry)}
                 onChange={e=>setDraft({...draft,multiattack:draft.multiattack!.map((item,i)=>i===index?{...item,attackId:e.target.value.startsWith('ability:')?e.target.value.slice(8):e.target.value,kind:e.target.value.startsWith('ability:')?'ability':'attack'}:item)})}>
                 {!compositionOptions.some(option=>entryKey({attackId:option.id,kind:option.kind})===entryKey(entry))?<option value={entryKey(entry)}>Opção removida — selecione outra</option>:null}
-                {compositionOptions.map(option=><option value={entryKey({attackId:option.id,kind:option.kind})} key={`${option.kind}:${option.id}`}>{option.kind==='ability'?'Habilidade · ':''}{option.name}</option>)}
+                {compositionOptions.map(option=><option value={entryKey({attackId:option.id,kind:option.kind})} key={`${option.kind}:${option.id}`}>{option.kind==='ability'?'':''}{option.name}</option>)}
               </select></label>
               <label>Quantidade<input aria-label={`Quantidade do ataque ${index+1}`} type="number" min={1} max={20} value={entry.count}
                 onChange={e=>setDraft({...draft,multiattack:draft.multiattack!.map((item,i)=>i===index?{...item,count:Number(e.target.value)}:item)})}/></label>
               <button type="button" className="btn btn-small" onClick={()=>setDraft({...draft,multiattack:draft.multiattack!.filter((_,i)=>i!==index)})}>Remover opção da composição</button>
             </div>)}
             <button type="button" className="btn btn-small" disabled={!compositionOptions.some(option=>!draft.multiattack?.some(item=>item.attackId===option.id&&(item.kind??'attack')===option.kind))}
-              onClick={()=>{const next=compositionOptions.find(option=>!draft.multiattack?.some(item=>item.attackId===option.id&&(item.kind??'attack')===option.kind));if(next)setDraft({...draft,multiattack:[...(draft.multiattack??[]),{attackId:next.id,...(next.kind==='ability'?{kind:'ability' as const}:{}),count:1}]});}}>Adicionar ataque ou habilidade</button>
+              onClick={()=>{const next=compositionOptions.find(option=>!draft.multiattack?.some(item=>item.attackId===option.id&&(item.kind??'attack')===option.kind));if(next)setDraft({...draft,multiattack:[...(draft.multiattack??[]),{attackId:next.id,...(next.kind==='ability'?{kind:'ability' as const}:{}),count:1}]});}}>Adicionar ação à composição</button>
           </div>:null}
           {draft.execution==='area-save-damage'?<CreatureAreaFields value={draft.area??defaultCreatureArea} onChange={area=>setDraft({...draft,area})}/>:null}
           {draft.cost === 'reaction' ? (
@@ -325,10 +261,10 @@ export function CreatureAbilitiesEditor({
           ) : null}
           <div className="creature-card-actions">
             <button type="button" className="btn btn-primary" onClick={save}>
-              Salvar habilidade
+              Salvar ação
             </button>
             <button type="button" className="btn" onClick={() => edit(null)}>
-              Cancelar habilidade
+              Cancelar ação
             </button>
             {abilities.some((item) => item.id === draft.id) ? (
               <button
@@ -339,12 +275,99 @@ export function CreatureAbilitiesEditor({
                   edit(null);
                 }}
               >
-                Remover habilidade
+                Remover ação
               </button>
             ) : null}
           </div>
         </div>
+      ) : null;
+  return (
+    <div className="creature-attacks">
+      <div className="creature-section-heading">
+        <p>
+          Cadastre as ações da criatura. Cada cópia controla seus
+          próprios usos.
+        </p>
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={!!draft}
+          onClick={() =>
+            edit({
+              id: createOperationId(),
+              name: '',
+              description: '',
+              cost: 'action',
+              execution: 'assisted',
+              trigger: '',
+              maxUses: null,
+            })
+          }
+        >
+          Adicionar ação
+        </button>
+      </div>
+      {!draft ? (
+        <div
+          className="creature-card-actions"
+          aria-label="Modelos de ação"
+        >
+          <span>Começar com:</span>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() =>
+              edit({
+                id: createOperationId(),
+                name: 'Desengajar',
+                cost: 'bonus-action',
+                execution: 'disengage',
+                description: 'Esta criatura pode Desengajar como ação bônus.',
+                trigger: '',
+                maxUses: null,
+              })
+            }
+          >
+            Desengajar como bônus
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() =>
+              edit({
+                id: createOperationId(),
+                name: 'Esconder-se',
+                cost: 'bonus-action',
+                execution: 'assisted',
+                description:
+                  'Esta criatura pode tentar se esconder como ação bônus. O Mestre verifica as circunstâncias e resolve o teste.',
+                trigger: '',
+                maxUses: null,
+              })
+            }
+          >
+            Esconder-se como bônus
+          </button>
+        </div>
       ) : null}
+      {!abilities.length && !draft ? (
+        <p className="empty-hint">
+          Exemplos: Desengajar como ação bônus, Esconder-se ou uma
+          característica passiva.
+        </p>
+      ) : null}
+      <div aria-label="Ações cadastradas">
+        {attackEditor}
+        {abilities.filter(item=>item.cost!=='legendary').map(renderAction)}
+        {draft?.cost!=='legendary'?actionForm:null}
+      </div>
+      {abilities.some(item=>item.cost==='legendary')||draft?.cost==='legendary'?<section aria-label="Ações Lendárias cadastradas">
+        <h3>Ações Lendárias</h3>
+        {legendarySettings}
+        {abilities.filter(item=>item.cost==='legendary').map(renderAction)}
+        {draft?.cost==='legendary'?actionForm:null}
+      </section>:null}
+
     </div>
   );
 }

@@ -37,8 +37,8 @@ const {beginMultiattack,recordMultiattack}=await import('../../src/modules/share
 const {creatureAbilitySchema}=await import('../../src/modules/shared/creature-abilities');
 try {
  await act(async()=>root.render(h(Harness)));
- await click('Adicionar habilidade');await change('Nome da habilidade','Ataques Múltiplos');await change('Execução da habilidade','multiattack');
- await change('Quantidade do ataque 1','1');await click('Adicionar ataque ou habilidade');await change('Quantidade do ataque 2','2');await click('Salvar habilidade');
+ await click('Adicionar ação');await change('Nome da ação','Ataques Múltiplos');await change('Execução da ação','multiattack');
+ await change('Quantidade do ataque 1','1');await click('Adicionar ação à composição');await change('Quantidade do ataque 2','2');await click('Salvar ação');
  assert.deepEqual(saved[0].multiattack,[{attackId:'bite',count:1},{attackId:'claw',count:2}]);
  const economy=onTurnStart(9);beginMultiattack(economy,creatureAbilitySchema.parse(saved[0]),attacks,'sequence');
  const unit={id:'source',kind:'CREATURE',name:'Atacante',creatureId:'creature',hpCurrent:100,conditionEffects:{canAct:true},turnEconomy:economy,abilities:saved} as unknown as CombatantDto;
@@ -59,7 +59,7 @@ try {
  const special=creatureAbilitySchema.parse({id:'presence',name:'Habilidade especial de prova',cost:'action',execution:'assisted'});
  const original=saved[0];
  function MixedHarness(){const [list,setList]=useState<CreatureAbility[]>([original,special]);return h(CreatureAbilitiesEditor,{attacks,abilities:list,onChange:value=>{saved=value;setList(value);},onEditingChange:()=>{}});}
- await act(async()=>root.render(h(MixedHarness)));await click('Editar habilidade');await click('Adicionar ataque ou habilidade');await click('Salvar habilidade');
+ await act(async()=>root.render(h(MixedHarness)));await click('Editar ação');await click('Adicionar ação à composição');await click('Salvar ação');
  assert.deepEqual(saved[0].multiattack!.at(-1),{kind:'ability',attackId:'presence',count:1});
  const mixedEconomy=onTurnStart(9);beginMultiattack(mixedEconomy,saved[0],attacks,'mixed-ui',saved);
  const mixedUnit={...unit,turnEconomy:mixedEconomy,abilities:saved};const mixedCombat={...combat,combatants:[mixedUnit,target]};

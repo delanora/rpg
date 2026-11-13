@@ -178,24 +178,24 @@ try {
         '.creature-wizard-footer .btn-primary',
       )?.disabled,
   );
-  await click('Adicionar habilidade');
+  await click('Adicionar ação');
   check('edição da habilidade bloqueia a navegação', document.querySelector<HTMLButtonElement>('.creature-wizard-footer .btn-primary')?.disabled);
-  await change('[aria-label="Nome da habilidade"]', 'Escape ágil');
+  await change('[aria-label="Nome da ação"]', 'Escape ágil');
   const choose = async (label: string, value: string) => act(async () => {
     const select = document.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
     select.value = value; select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   });
-  await choose('Custo da habilidade', 'bonus-action');
-  await choose('Execução da habilidade', 'disengage');
+  await choose('Custo da ação', 'bonus-action');
+  await choose('Execução da ação', 'disengage');
   await change('[aria-label="Usos da habilidade"]', '2');
-  await click('Salvar habilidade');
+  await click('Salvar ação');
   check('habilidade apresenta custo, execução e limite', document.body.textContent?.includes('Ação bônus · Automática · 2 usos por combate'));
-  await click('Adicionar habilidade');
-  await choose('Custo da habilidade', 'reaction');
-  await change('[aria-label="Nome da habilidade"]', 'Guarda');
-  await click('Salvar habilidade');
+  await click('Adicionar ação');
+  await choose('Custo da ação', 'reaction');
+  await change('[aria-label="Nome da ação"]', 'Guarda');
+  await click('Salvar ação');
   check('reação sem gatilho mantém formulário e mostra erro', document.querySelector('[role="alert"]')?.textContent?.includes('gatilho'));
-  await click('Cancelar habilidade');
+  await click('Cancelar ação');
   await click('Continuar');
   await click('Continuar');
   check(
@@ -299,15 +299,15 @@ try {
     combat: { status: 'ACTIVE', currentCombatantId: 'other-copy' } as any, combatant: unit as any, busy: false, onRun: () => { commands++; },
   })));
   await renderAbility();
-  check('reação cadastrada fica acessível fora do turno', ![...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar habilidade')?.disabled);
-  await click('Usar habilidade');
+  check('reação cadastrada fica acessível fora do turno', ![...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar ação')?.disabled);
+  await click('Usar ação');
   check('reação assistida pede confirmação do gatilho', document.querySelector('.combat-ability-confirm')?.textContent?.includes('ocorrência do gatilho'));
   await click('Cancelar');
   check('cancelar a confirmação não envia comando', commands === 0);
-  await click('Usar habilidade'); await click('Confirmar');
+  await click('Usar ação'); await click('Confirmar');
   check('confirmar encaminha uma operação ao controlador', commands === 1);
   await renderAbility({ ...reactionUnit, hpCurrent: 0 });
-  check('token a zero PV não oferece uso da habilidade', [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar habilidade')?.disabled);
+  check('token a zero PV não oferece uso da habilidade', [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar ação')?.disabled);
   const copies = repeatedCreatureIds([{ kind: 'CREATURE', creatureId: 'dragon' }, { kind: 'CREATURE', creatureId: 'goblin' }, { kind: 'CREATURE', creatureId: 'goblin' }, { kind: 'NPC', creatureId: 'dragon' }]);
   check('somente cópias do mesmo cadastro recebem numeração', copies.has('goblin') && !copies.has('dragon'));
   check('lista pública com uma só cópia não denuncia outras ocultas', !repeatedCreatureIds([{ kind: 'CREATURE', creatureId: 'goblin' }]).size);
