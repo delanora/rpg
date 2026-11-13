@@ -1,3 +1,4 @@
+import './common-tray.css';
 import { DeathFateHeader } from './DeathFateHeader';
 import { DeathSaveTitle } from './DeathSaveTitle';
 import { DeathSaveRoll } from './DeathSaveRoll';
@@ -158,13 +159,13 @@ export function DiceDock({ roller }: DiceDockProps) {
       {open
         ? createPortal(
             <div
-              className={`dice-overlay${deathSave ? ' is-death-save' : ''}`}
+              className={`dice-overlay${deathSave ? ' is-death-save' : ' is-standard-roll'}`}
               role="dialog"
               aria-modal="true"
               onClick={close}
             >
               <div
-                className={`dice-stage${deathSave ? ' is-death-save' : ''}`}
+                className={`dice-stage${deathSave ? ' is-death-save' : ' is-standard-roll'}`}
                 onClick={(event) => event.stopPropagation()}
                 // Teste contra a Morte: interagir nos 3 s cancela o fechamento
                 // automático (hover, clique, foco ou tecla) — leitura em paz.

@@ -1,3 +1,4 @@
+import './common-tray.css';
 import { DeathFateHeader } from './DeathFateHeader';
 import { DeathSaveTitle } from './DeathSaveTitle';
 import { DeathSaveRoll } from './DeathSaveRoll';
@@ -52,13 +53,13 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
 
   return createPortal(
     <div
-      className={`dice-overlay${deathSave ? ' is-death-save' : ''}`}
+      className={`dice-overlay${deathSave ? ' is-death-save' : ' is-standard-roll'}`}
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className={`dice-stage${deathSave ? ' is-death-save' : ''}`}
+        className={`dice-stage${deathSave ? ' is-death-save' : ' is-standard-roll'}`}
         onClick={(event) => event.stopPropagation()}
       >
         {/* Cabeçalho: quem está rolando (só leitura para quem assiste). */}

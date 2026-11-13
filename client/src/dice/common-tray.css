@@ -1,0 +1,132 @@
+/* Artes originais da bandeja comum. O Teste contra a Morte conserva sua pele. */
+.dice-overlay.is-standard-roll {
+  background: radial-gradient(circle at 50% 40%, rgb(14 18 23 / 72%), rgb(3 4 7 / 94%));
+  backdrop-filter: blur(7px);
+}
+
+.dice-stage.is-standard-roll {
+  --ink: #f1e5cf;
+  --ink-soft: #d6c7af;
+  --ink-faint: #b4a58e;
+  --surface: #15161a;
+  --surface-2: #242025;
+  --surface-3: #30282a;
+  --line: rgb(199 157 88 / 24%);
+  --line-strong: rgb(199 157 88 / 48%);
+  --gold: #c8a15d;
+  --gold-deep: #bd9555;
+  --gold-bright: #edce8e;
+  color: var(--ink);
+  background: url('/dice-tray/fundo.png') center / cover no-repeat, #0b0d11;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: 0 22px 70px -20px #000, inset 0 0 0 4px rgb(8 9 12 / 70%), inset 0 0 0 5px rgb(199 157 88 / 18%);
+}
+
+.dice-stage.is-standard-roll .dice-head h2,
+.dice-stage.is-standard-roll .dice-head-bonus,
+.dice-stage.is-standard-roll .dice-total-value,
+.dice-stage.is-standard-roll .dice-log-head h3 {
+  color: var(--gold-bright);
+  text-shadow: 0 2px 6px #000;
+}
+
+.dice-stage.is-standard-roll .dice-head-close {
+  flex-shrink: 0;
+  color: var(--ink-soft);
+  background: rgb(12 14 19 / 75%);
+  border-color: var(--line-strong);
+}
+
+.dice-stage.is-standard-roll .dice-ring {
+  flex-shrink: 0;
+  width: min(100%, 28rem, 52dvh);
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.dice-stage.is-standard-roll .dice-ring::after {
+  inset: -2%;
+  z-index: 2;
+  border-radius: 0;
+  background: url('/dice-tray/moldura.png') center / 106% 106% no-repeat;
+  box-shadow: none;
+  filter: drop-shadow(0 4px 5px rgb(0 0 0 / 70%));
+}
+
+.dice-stage.is-standard-roll .dice-ring-inner {
+  inset: 7%;
+  background: url('/dice-tray/superficie.png') center / cover no-repeat, #0c0e11;
+  box-shadow: inset 0 0 30px rgb(0 0 0 / 75%);
+}
+
+.dice-stage.is-standard-roll .dice-ring-hint {
+  color: var(--ink-soft);
+  text-align: center;
+  text-shadow: 0 2px 4px #000;
+}
+
+.dice-stage.is-standard-roll .dice-readout-hint,
+.dice-stage.is-standard-roll .dice-total-detail,
+.dice-stage.is-standard-roll .dice-total-tags,
+.dice-stage.is-standard-roll .dice-toggle,
+.dice-stage.is-standard-roll .dice-watch-tag {
+  color: var(--ink-soft);
+}
+
+.dice-stage.is-standard-roll .dice-pick {
+  color: var(--ink);
+  border-color: var(--line-strong);
+  background: linear-gradient(180deg, rgb(62 48 31 / 90%), rgb(22 24 29 / 95%));
+  box-shadow: inset 0 1px 0 rgb(235 203 141 / 12%);
+}
+
+.dice-stage.is-standard-roll .dice-pick:hover {
+  color: var(--gold-bright);
+  border-color: var(--gold-bright);
+}
+
+@media (max-width: 520px) {
+  .dice-overlay.is-standard-roll { padding: 0.6rem; }
+  .dice-stage.is-standard-roll { width: 100%; padding: 0.9rem; }
+  .dice-stage.is-standard-roll .dice-head { flex-wrap: wrap; }
+  .dice-stage.is-standard-roll .dice-head h2 { flex: 1; min-width: 0; }
+}
+
+/* Pools maiores continuam dentro do aro, sem alterar a geometria dos dados. */
+.dice-stage.is-standard-roll .dice-ring-floor:has(.ddie:nth-child(4)) {
+  --tray-die-box: clamp(2rem, 8vw, 4rem);
+  --tray-die-scale: 0.28;
+  gap: 0.25rem;
+}
+.dice-stage.is-standard-roll .dice-ring-floor:has(.ddie:nth-child(13)) {
+  --tray-die-box: clamp(1.3rem, 5vw, 2.6rem);
+  --tray-die-scale: 0.18;
+  gap: 0.15rem;
+}
+.dice-stage.is-standard-roll .dice-ring-floor:has(.ddie:nth-child(25)) {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  align-content: center;
+  justify-items: center;
+  padding: 17%;
+  --tray-die-box: clamp(0.9rem, 3vw, 1.8rem);
+  --tray-die-scale: 0.12;
+  gap: 0.05rem;
+}
+
+.dice-stage.is-standard-roll .dice-total-tags .private { color: var(--gold-bright); }
+.dice-stage.is-standard-roll .dice-error { color: #ffb6a3; }
+
+.dice-stage.is-standard-roll .dice-ring-floor .ddie {
+  --ddie-box: var(--tray-die-box, 6.8rem);
+  --ddie-scale: var(--tray-die-scale, 0.47);
+}
+@media (max-width: 520px) {
+  .dice-stage.is-standard-roll .dice-ring-floor .ddie {
+    --ddie-box: var(--tray-die-box, 4.6rem);
+    --ddie-scale: var(--tray-die-scale, 0.34);
+  }
+}
