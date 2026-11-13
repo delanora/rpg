@@ -54,10 +54,9 @@
 .dice-stage.is-standard-roll .dice-ring::after { display: none; }
 .dice-stage.is-standard-roll .dice-common-frame {
   position: absolute;
-  left: -5%;
-  top: -5%;
-  width: 110%;
-  height: 110%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   max-width: none;
   object-fit: contain;
   pointer-events: none;
@@ -69,10 +68,20 @@
   to { opacity: 1; }
 }
 
-.dice-stage.is-standard-roll .dice-ring-inner {
-  inset: 7%;
+/* A superfície opaca vai sob todo o furo do aro; o recorte dos dados é independente. */
+.dice-stage.is-standard-roll .dice-ring::before {
+  content: '';
+  position: absolute;
+  inset: 2%;
+  border-radius: 50%;
   background: url('/dice-tray/superficie.png') center / cover no-repeat, #0c0e11;
   box-shadow: inset 0 0 30px rgb(0 0 0 / 75%);
+  pointer-events: none;
+}
+.dice-stage.is-standard-roll .dice-ring-inner {
+  inset: 8%;
+  background: transparent;
+  box-shadow: none;
 }
 
 .dice-stage.is-standard-roll .dice-ring-hint {
