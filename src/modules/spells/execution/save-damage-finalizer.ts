@@ -1,3 +1,6 @@
+import { conditionBlockedReason } from '../../mechanical/condition-instances.js';
+import { applyEffectConditions } from '../../effects/effect-conditions.js';
+import { endEffectsForConcentration } from '../../effects/effects.service.js';
 import { loadSaveDamageSource, updateSaveDamageSource, type SaveDamageSourceKind } from '../../combat/save-damage-source.js';
 import type { Prisma } from '@prisma/client';
 import { HttpError } from '../../../lib/http-error.js';
@@ -193,7 +196,7 @@ export async function finalizeSaveDamageCast(
   });
 
   const sourceName=cast.kind==='creature-ability'&&cast.visibility==='private'?'Origem oculta':caster?.name??'Sistema';
-  const needsDamage = validTargets.some((item) => item.share !== 'none');
+  const needsDamage = resolution.damage.components.length>0 && validTargets.some((item) => item.share !== 'none');
   const scalingLevel = sourceKind==='creature-ability'?1:caster ? (await cantripScalingLevelOf(caster, db)).level : 1;
 
   // ROLL COMPARTILHADO: cada componente é rolado UMA vez para TODOS os alvos.
@@ -219,10 +222,24 @@ export async function finalizeSaveDamageCast(
   const deathTargets: MechanicalEntity[] = [];
   const affectedEffects: MechanicalEntity[] = [];
   let concentrationChanged = false;
+  const conditionTargets=new Set<string>();
   const results: SaveDamageTargetResult[] = [];
 
   for (const item of planned) {
     const eventId = targetDamageEventIdOf(castId, item.target,sourceKind);
+    if(item.valid&&!item.success&&cast.kind==='creature-ability'&&'areaDefinition' in cast&&cast.areaDefinition.conditions?.length){
+      const loaded=await loadEntity(item.target,db);
+      const conditions=cast.areaDefinition.conditions.filter(condition=>!conditionBlockedReason(loaded.state,condition));
+      if(conditions.length){
+      const effect=await db.effectInstance.create({data:{label:cast.label,sourceType:'feature',sourceId:cast.id,definitionId:`creature-ability.${cast.abilityId}`,sourceEntityKind:cast.casterEntityKind,sourceEntityId:cast.casterEntityId,sourceLabel:cast.casterLabel,targetEntityKind:item.target.kind,targetEntityId:item.target.id,visibility:cast.visibility,conditions,modifiers:[],metadata:{management:'assisted'}}});
+      if(item.pending)await db.pendingEffectSave.update({where:{id:item.pending.id},data:{effectId:effect.id}});
+      const applied=await applyEffectConditions(effect,item.target,db);
+      affectedEffects.push(item.target);conditionTargets.add(keyOf(item.target));
+      if(applied.endedConcentration){concentrationChanged=true;affectedEffects.push(...await endEffectsForConcentration(applied.endedConcentration,db));}
+      if(item.target.kind==='character')publications.add(item.target.id);
+      }
+    }
+
     if (!item.valid || !damageRoll) {
       results.push({
         target: { kind: item.target.kind, id: item.target.id },
@@ -376,7 +393,7 @@ export async function finalizeSaveDamageCast(
     });
   }
 
-  const dealt = results.some((result) => result.finalDamage > 0);
+  const dealt = conditionTargets.size>0||results.some((result) => result.finalDamage > 0);
   const damageType = [...new Set((damageRoll?.components ?? []).map((item) => item.type))].join(' + ');
   const snapshot: SaveDamageCastSnapshot = {
     kind: 'save-damage',
@@ -454,7 +471,7 @@ export async function finalizeSaveDamageCast(
     const combat=await loadCombatById(cast.combatId,db);
     for(const result of results){
       const target=combat.combatants.find(unit=>result.target.kind==='character'?unit.characterId===result.target.id:unit.id===result.target.id);
-      await appendEconomyLog(db,combat,{name:cast.casterLabel},`${cast.label} → ${target?.name??'Alvo removido'}: ${result.finalDamage} de dano${result.status==='unavailable'?' (alvo indisponível)':''}.`,'creature-area-damage',{private:cast.visibility==='private'||target?.spatialVisibility==='master-only'});
+      await appendEconomyLog(db,combat,{name:cast.casterLabel},`${cast.label} → ${target?.name??'Alvo removido'}: ${result.finalDamage} de dano${conditionTargets.has(`${result.target.kind}:${result.target.id}`)?' · condições aplicadas':''}${result.status==='unavailable'?' (alvo indisponível)':''}.`,'creature-area-damage',{private:cast.visibility==='private'||target?.spatialVisibility==='master-only'});
     }
   }
   const { settleOpportunitySpell } = await import('../../combat/spatial/opportunity-attack.service.js');

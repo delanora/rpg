@@ -1,3 +1,4 @@
+import { CONDITION_LABELS } from '../../../../src/modules/shared/conditions';
 import type { CreatureAreaDefinition } from '../../../../src/modules/shared/creature-abilities';
 import { DAMAGE_TYPES } from '../../../../src/modules/shared/attacks';
 import { ABILITY_LABELS } from '../../dnd';
@@ -169,7 +170,7 @@ export function CreatureAreaFields({
             }
           />
         </label>
-        <label>
+        {value.damage.length?<label>
           No sucesso
           <select
             aria-label="Dano no sucesso da salvaguarda"
@@ -184,9 +185,13 @@ export function CreatureAreaFields({
             <option value="half">Metade do dano</option>
             <option value="none">Nenhum dano</option>
           </select>
-        </label>
+        </label>:null}
       </div>
-      <h4>Dano compartilhado</h4>
+      <h4>Resultado na falha</h4>
+      <label className="creature-checkbox"><input type="checkbox" aria-label="Causar dano na falha" checked={value.damage.length>0} onChange={event=>onChange({...value,damage:event.target.checked?structuredClone(defaultCreatureArea.damage):[],...(!event.target.checked?{onSuccess:'none' as const}:{})})}/> Causar dano</label>
+      <div className="creature-form-grid">{Object.entries(CONDITION_LABELS).map(([key,label])=><label className="creature-checkbox" key={key}><input type="checkbox" checked={value.conditions?.includes(key as keyof typeof CONDITION_LABELS)??false} onChange={event=>onChange({...value,conditions:event.target.checked?[...(value.conditions??[]),key as keyof typeof CONDITION_LABELS]:(value.conditions??[]).filter(condition=>condition!==key)})}/>{label}</label>)}</div>
+      <p className="field-hint">Condições são aplicadas na falha e podem ser encerradas nos efeitos do alvo. Duração, novos testes e imunidades ficam sob decisão do Mestre; descreva essas regras na habilidade.</p>
+      {value.damage.length?<h4>Dano compartilhado</h4>:null}
       {value.damage.map((component, index) => (
         <div className="creature-form-grid" key={index}>
           <label>
@@ -272,9 +277,8 @@ export function CreatureAreaFields({
         </div>
       ))}
       <p className="field-hint">
-        Um único dano rolado para todos os alvos. Cada um aplica a salvaguarda e
-        suas resistências/imunidades. Recarga: controle os usos manualmente
-        nesta etapa.
+        {value.damage.length?'Um único dano rolado para todos os alvos.':''} Cada um aplica a salvaguarda e
+        suas resistências/imunidades. As condições selecionadas são aplicadas somente na falha.
       </p>
     </fieldset>
   );

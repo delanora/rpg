@@ -2,7 +2,7 @@ import { GridAreaShape } from './GridAreaShape';
 import { useShareAreaVisual } from './areaVisual';
 import { ApiError } from '../../api';
 import { createOperationId } from '../../utils';
-import { useCreatureAbility } from '../combatApi';
+import { useLegendaryAction, useCreatureAbility } from '../combatApi';
 import type { CombatDto } from '../../types';
 import type { CreatureAreaPlacement } from '../../../../src/modules/shared/creature-abilities';
 import {
@@ -86,6 +86,7 @@ export function GridAreaPreview({
     key: string;
     items: { targetKey: string; affected: boolean }[];
   }>({ key: '', items: [] });
+  const [excludedTargets,setExcludedTargets]=useState<{key:string;ids:string[]}>({key:'',ids:[]});
   const [readings, setReadings] = useState<AreaReading[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -322,6 +323,7 @@ export function GridAreaPreview({
         angle: saved.angle,
         decisions,
         definitionFingerprint: fingerprint!,
+        selectedTargetKeys:readings.filter(row=>row.affected==='pass'&&!(excludedTargets.key===decisionKey&&excludedTargets.ids.includes(row.targetKey))).map(row=>row.targetKey),
       },
       operationId: createOperationId(),
     };
@@ -329,13 +331,17 @@ export function GridAreaPreview({
     setExecuting(true);
     setError(null);
     try {
-      const combat = await useCreatureAbility(intention.combat, {
+      const legendary=intention.context.definition.cost==='legendary';
+      const windowId=intention.context.windowId;
+      if(legendary&&!windowId)throw new Error('A janela lendária já terminou.');
+      const input = {
         combatantId: intention.context.combatantId,
         abilityId: intention.context.definition.id,
         areaPlacement: intention.placement,
         operationId: intention.operationId,
         confirmed: true,
-      });
+      };
+      const combat=legendary?await useLegendaryAction(intention.combat,{...input,windowId:windowId!}):await useCreatureAbility(intention.combat,input);
       pendingUse.current = null;
       setUncertain(false);
       setSaved(null);
@@ -595,7 +601,7 @@ export function GridAreaPreview({
             {!loading && !error && saved ? (
               <>
                 <strong>
-                  {readings.filter((row) => row.affected === 'pass').length}{' '}
+                  {readings.filter((row) => row.affected === 'pass'&&!(excludedTargets.key===decisionKey&&excludedTargets.ids.includes(row.targetKey))).length}{' '}
                   atingido(s)
                 </strong>
                 <ul>
@@ -610,7 +616,8 @@ export function GridAreaPreview({
                           row.affected === 'pass' ? 'is-hit' : 'is-uncertain'
                         }
                       >
-                        {row.name} ·{' '}
+                        {saved?.ability&&row.affected==='pass'?<label><input type="checkbox" aria-label={`Incluir ${row.name}`} disabled={executing||uncertain} checked={!(excludedTargets.key===decisionKey&&excludedTargets.ids.includes(row.targetKey))} onChange={event=>setExcludedTargets(previous=>({key:decisionKey,ids:event.target.checked?(previous.key===decisionKey?previous.ids:[]).filter(id=>id!==row.targetKey):[...(previous.key===decisionKey?previous.ids:[]),row.targetKey]}))}/> {row.name}</label>:row.name} ·{' '}
+
                         {row.affected === 'pass'
                           ? row.decisionSource === 'master-confirmed'
                             ? 'Atingido · decisão do Mestre'

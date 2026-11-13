@@ -178,7 +178,7 @@ export function CreatureAbilitiesEditor({
                   setDraft({
                     ...draft,
                     cost: e.target.value as CreatureAbility['cost'],
-                    execution: 'assisted',
+                    execution: e.target.value!=='passive' && draft.execution==='area-save-damage' ? draft.execution : 'assisted',
                     multiattack: undefined,
                     maxUses:
                       ['passive','legendary'].includes(e.target.value) ? null : draft.maxUses,
@@ -222,8 +222,9 @@ export function CreatureAbilitiesEditor({
                 <option value="dash">Disparada</option>
                 <option value="dodge">Esquivar</option>
                 {draft.cost==='action'?<option value="multiattack">Ataques Múltiplos</option>:null}
-                <option value="area-save-damage">Área com salvaguarda e dano</option>
+
                 </> : null}
+                {['action','bonus-action','legendary'].includes(draft.cost)?<option value="area-save-damage">Área com salvaguarda e efeitos</option>:null}
               </select>
             </label>
             {draft.cost !== 'passive' && draft.cost !== 'legendary' ? (

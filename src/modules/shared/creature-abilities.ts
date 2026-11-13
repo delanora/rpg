@@ -1,18 +1,20 @@
 import { spatialPositionSchema } from '../combat/spatial/spatial.types.js';
 import { areaUnknownDecisionSchema } from '../spells/execution/spell-cast.schema.js';
 import { areaShapeSchema } from '../spells/execution/area-targeting.js';
+import { conditionSchema } from './conditions.js';
 import { DAMAGE_TYPES } from './attacks.js';
 import { z } from 'zod';
 
-export const creatureAreaPlacementSchema=z.object({definitionFingerprint:z.string().length(64).optional(),origin:spatialPositionSchema,angle:z.number().finite().min(-Math.PI*2).max(Math.PI*2).default(0),decisions:z.array(areaUnknownDecisionSchema).max(1000).optional()}).strict();
+export const creatureAreaPlacementSchema=z.object({selectedTargetKeys:z.array(z.string().min(1)).max(1000).optional(),definitionFingerprint:z.string().length(64).optional(),origin:spatialPositionSchema,angle:z.number().finite().min(-Math.PI*2).max(Math.PI*2).default(0),decisions:z.array(areaUnknownDecisionSchema).max(1000).optional()}).strict();
 export type CreatureAreaPlacement=z.infer<typeof creatureAreaPlacementSchema>;
 export const creatureAreaDefinitionSchema=z.object({
+ conditions:z.array(conditionSchema).max(15).optional(),
  shape:areaShapeSchema,
  rangeFeet:z.number().finite().min(0).max(2000).default(0),
  saveAbility:z.enum(['strength','dexterity','constitution','intelligence','wisdom','charisma']),
  dc:z.number().int().min(1).max(40),
  onSuccess:z.enum(['half','none']).default('half'),
- damage:z.array(z.object({type:z.enum(DAMAGE_TYPES),dice:z.object({count:z.number().int().min(1).max(100),sides:z.union([z.literal(4),z.literal(6),z.literal(8),z.literal(10),z.literal(12),z.literal(20)])}).strict()}).strict()).min(1).max(5),
+ damage:z.array(z.object({type:z.enum(DAMAGE_TYPES),dice:z.object({count:z.number().int().min(1).max(100),sides:z.union([z.literal(4),z.literal(6),z.literal(8),z.literal(10),z.literal(12),z.literal(20)])}).strict()}).strict()).min(0).max(5),
 }).strict();
 export type CreatureAreaDefinition=z.infer<typeof creatureAreaDefinitionSchema>;
 /** Definição do cadastro; o gasto pertence a cada instância do combate. */
@@ -42,8 +44,8 @@ export const creatureAbilitySchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if(value.cost==='legendary' && (!value.legendaryCost || !['assisted','legendary-attack'].includes(value.execution) || value.maxUses!==null || value.recharge))
-      ctx.addIssue({code:'custom',message:'Ação Lendária exige custo no saldo próprio e execução assistida ou um ataque cadastrado.'});
+    if(value.cost==='legendary' && (!value.legendaryCost || !['assisted','legendary-attack','area-save-damage'].includes(value.execution) || value.maxUses!==null || value.recharge))
+      ctx.addIssue({code:'custom',message:'Ação Lendária exige custo no saldo próprio e execução assistida, ataque cadastrado ou área com salvaguarda.'});
     if(value.execution==='legendary-attack' && (value.cost!=='legendary'||!value.legendaryAttackId))
       ctx.addIssue({code:'custom',message:'Selecione o ataque da Ação Lendária.'});
     if (value.execution === 'multiattack') {
@@ -54,7 +56,8 @@ export const creatureAbilitySchema = z
     }
     if (value.recharge && (value.cost === 'passive' || value.maxUses !== 1))
       ctx.addIssue({ code: 'custom', message: 'Recarga em 1d6 exige uma habilidade ativa com um único uso.' });
-    if(value.execution==='area-save-damage'&&(!value.area||!['action','bonus-action'].includes(value.cost)))ctx.addIssue({code:'custom',message:'Área com dano exige uma Ação/Ação bônus e forma, CD e dano cadastrados.'});
+    if(value.execution==='area-save-damage'&&(!value.area||!['action','bonus-action','legendary'].includes(value.cost)))ctx.addIssue({code:'custom',message:'Salvaguarda em área exige custo ativo, forma, CD e dano ou condição.'});
+    if(value.execution==='area-save-damage'&&value.area&&!value.area.damage.length&&!value.area.conditions?.length)ctx.addIssue({code:'custom',message:'Configure pelo menos um dano ou condição na falha.'});
     if (
       value.cost === 'passive' &&
       (!['assisted', 'war-caster'].includes(value.execution) || value.maxUses !== null)

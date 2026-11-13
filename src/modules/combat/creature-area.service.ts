@@ -137,6 +137,8 @@ export async function beginCreatureAreaUse(
         .map((row) => [row.targetKey, { kind: row.kind, id: row.id }]),
     ).values(),
   ];
+  if(placement.selectedTargetKeys?.some(key=>!targets.some(target=>`${target.kind}:${target.id}`===key)))throw new HttpError('A seleção inclui um alvo fora da área válida.',400,'AREA_TARGET_INVALID');
+  const selectedTargets=placement.selectedTargetKeys?targets.filter(target=>placement.selectedTargetKeys!.includes(`${target.kind}:${target.id}`)):targets;
   const hidden = unit.spatialVisibility === 'master-only';
   const use = await db.creatureAreaUse.create({
     data: {
@@ -148,11 +150,11 @@ export async function beginCreatureAreaUse(
       label: ability.name,
       definition: area as Prisma.InputJsonValue,
       placement: placement as Prisma.InputJsonValue,
-      targets,
+      targets:selectedTargets,
       visibility: hidden ? 'private' : 'public',
     },
   });
-  for (const target of targets) {
+  for (const target of selectedTargets) {
     const targetUnit = combat.combatants.find((item) =>
       target.kind === 'character'
         ? item.characterId === target.id
@@ -205,7 +207,7 @@ export async function beginCreatureAreaUse(
       },
     });
   }
-  if (!targets.length)
+  if (!selectedTargets.length)
     await finalizeSaveDamageCast(use.id, db, {
       sourceKind: 'creature-ability',
     });

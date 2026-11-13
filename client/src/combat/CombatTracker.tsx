@@ -1659,7 +1659,7 @@ export function CombatTracker({
           />
         }
         context={
-          isMaster && combat.legendaryWindow ? <LegendaryActionsPanel combat={combat} busy={busy} onRun={action=>void run(action)}/> : reactionOpportunity ? (
+          isMaster && combat.legendaryWindow ? <LegendaryActionsPanel combat={combat} busy={busy} onRun={action=>void run(action)} onPrepareArea={(combatantId,definition)=>{setHotbarPick(null);setTargetCombatantId(null);setAreaAbilityRequest({id:Date.now(),combatantId,definition});}}/> : reactionOpportunity ? (
             <>
 
             {/* Janela de Reação: SÓ com oportunidade concreta para este usuário. */}

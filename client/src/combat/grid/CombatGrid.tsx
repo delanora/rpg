@@ -125,7 +125,7 @@ export interface CombatGridProps {
    */
   combat: Pick<
     CombatDto,
-    'id' | 'version' | 'status' | 'currentCombatantId' | 'spatial' | 'sceneBackgroundImageUrl'
+    'id' | 'version' | 'status' | 'currentCombatantId' | 'spatial' | 'legendaryWindow' | 'sceneBackgroundImageUrl'
   > & { combatants: GridUnit[] };
   isMaster: boolean;
   relationReferenceId?: string | null;
@@ -310,6 +310,7 @@ export function CombatGrid({
   const [spacePan, setSpacePan] = useState(false);
   // --- modos e régua --------------------------------------------------------
   const [mode, setMode] = useState<InteractionMode>('none');
+  const [showTerrainMarks,setShowTerrainMarks]=useState(false);
   const [radial, setRadial] = useState<{ origin: SpatialPosition; position: SpatialPosition; point: Point2D } | null>(null);
   const [areaRequest, setAreaRequest] = useState<(AreaPreviewRequest & { scope: string }) | null>(null);
   const areaRequestId = useRef(0);
@@ -438,7 +439,7 @@ export function CombatGrid({
     if(!space||!areaAbilityRequest.definition.area){onError('Posicione a criatura no grid antes de preparar a área.');return;}
     areaAbilityHandled.current=areaAbilityRequest.id;
     setMode('none');
-    setAreaRequest({id:++areaRequestId.current,shape:areaAbilityRequest.definition.area.shape.kind,origin:{xFeet:(space.minXFeet+space.maxXFeet)/2,yFeet:(space.minYFeet+space.maxYFeet)/2},ability:{combatantId:areaAbilityRequest.combatantId,definition:areaAbilityRequest.definition},scope:areaSceneKey});
+    setAreaRequest({id:++areaRequestId.current,shape:areaAbilityRequest.definition.area.shape.kind,origin:{xFeet:(space.minXFeet+space.maxXFeet)/2,yFeet:(space.minYFeet+space.maxYFeet)/2},ability:{windowId:combat.legendaryWindow?.id,combatantId:areaAbilityRequest.combatantId,definition:areaAbilityRequest.definition},scope:areaSceneKey});
   },[areaAbilityRequest,isMaster,areaSceneKey,combat.combatants,onError]);
 
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;
@@ -2214,7 +2215,7 @@ export function CombatGrid({
                 tone={gridTone}
               />
 
-              <GridElevations terrain={scene.difficultTerrainCells} cells={scene.elevationCells} pixelsPerCell={DEFAULT_PIXELS_PER_CELL} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet} />
+              <GridElevations terrain={isMaster&&showTerrainMarks?scene.difficultTerrainCells:[]} cells={isMaster&&showTerrainMarks?scene.elevationCells:[]} pixelsPerCell={DEFAULT_PIXELS_PER_CELL} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet} />
 
               {placed.map((combatant) => (
                 <GridToken
@@ -2316,7 +2317,7 @@ export function CombatGrid({
             disabled={locked || gridPhase !== 'ready' || mode === 'placement' || rulerActive ||
               targetingActive || movementBusy || !!draft || !!grabGesture || combat.status === 'ENDED'}
           />
-          {radial && !locked ? <GridRadialMenu point={radial.point} canAdd={isMaster && !!onEmptyContext}
+          {radial && !locked ? <GridRadialMenu point={radial.point} canAdd={isMaster && !!onEmptyContext} terrainVisible={showTerrainMarks} onToggleTerrain={isMaster?()=>{setShowTerrainMarks(value=>!value);setRadial(null);}:undefined}
             areaDisabled={gridPhase !== 'ready' || mode === 'placement' || targetingActive || movementBusy || !!draft || !!grabGesture || rulerActive}
             onClose={() => setRadial(null)}
             onAdd={() => { onEmptyContext?.(radial.position, radial.point); setRadial(null); }}

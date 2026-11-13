@@ -375,6 +375,6 @@ export const opportunitySpellSchema = combatOperationSchema.extend({
   spell: z.object({spellId: z.string().min(1).max(64), spellcastingSource: spellcastingSourceRefSchema, castingResource: castingResourceRefSchema.optional()}).strict(),
 }).strict();
 
-export const legendaryUseSchema=combatOperationSchema.extend({windowId:z.string().min(1),combatantId:z.string().min(1),abilityId:z.string().min(1),targetCombatantId:z.string().min(1).optional(),confirmed:z.boolean().default(false)}).strict();
+export const legendaryUseSchema=combatOperationSchema.extend({windowId:z.string().min(1),combatantId:z.string().min(1),abilityId:z.string().min(1),targetCombatantId:z.string().min(1).optional(),areaPlacement:creatureAreaPlacementSchema.optional(),confirmed:z.boolean().default(false)}).strict();
 export const legendaryPassSchema=combatOperationSchema.extend({windowId:z.string().min(1),combatantId:z.string().min(1)}).strict();
 export const legendarySurpriseSchema=combatOperationSchema.extend({combatantId:z.string().min(1),surprised:z.boolean()}).strict();

@@ -32,6 +32,7 @@ export async function loadSaveDamageSource(
   return {
     ...row,
     kind,
+    areaDefinition:definition,
     spellId: row.abilityId,
     execution: { spellId: row.abilityId, resolution },
   };

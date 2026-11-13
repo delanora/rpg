@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PREVIEW_SHAPES, type PreviewShape } from './areaPreviewGeometry';
 
-type WheelIconName = PreviewShape | 'encounter' | 'areas';
+type WheelIconName = PreviewShape | 'encounter' | 'areas' | 'terrain';
 function WheelIcon({ name }: { name: WheelIconName }) {
+  if (name === 'terrain')return <Icon name="eye" size={20}/>;
   if (name === 'encounter' || name === 'areas')
     return <Icon name={name === 'encounter' ? 'sword' : 'sparkle'} size={15} />;
   return (
@@ -55,9 +56,13 @@ export function GridRadialMenu({
   onClose,
   onAdd,
   onArea,
+  terrainVisible,
+  onToggleTerrain,
 }: {
   point: { x: number; y: number };
   canAdd: boolean;
+  terrainVisible?:boolean;
+  onToggleTerrain?:()=>void;
   areaDisabled: boolean;
   onClose: () => void;
   onAdd: () => void;
@@ -164,6 +169,7 @@ export function GridRadialMenu({
         action: () => onArea(shape.kind),
       }))
     : [
+        ...(onToggleTerrain?[{label:terrainVisible?'Ocultar terreno':'Exibir terreno',icon:'terrain' as WheelIconName,disabled:false,action:onToggleTerrain}]:[]),
         ...(canAdd
           ? [
               {

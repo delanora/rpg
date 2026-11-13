@@ -37,7 +37,7 @@ export async function shareAreaVisual(combatId: string, input: z.infer<typeof ar
     if(origin.xFeet>scene.widthFeet || origin.yFeet>scene.heightFeet) throw new HttpError('Posicione a área dentro do grid.',400,'AREA_VISUAL_OUTSIDE');
     privateOnly=unit.spatialVisibility==='master-only';
     // Apenas dados necessários ao desenho; nunca a definição inteira ou os candidatos.
-    area={combatantId,origin,angle,shape:ability.area.shape,damageType:ability.area.damage[0].type};
+    area={combatantId,origin,angle,shape:ability.area.shape,damageType:ability.area.damage[0]?.type};
   }
   const now=Date.now();
   for(const [key,value] of received) if(now-value.at>300_000) received.delete(key);

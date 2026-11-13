@@ -10,6 +10,6 @@ export interface CombatAreaVisualPayload {
     origin: { xFeet: number; yFeet: number };
     angle: number;
     shape: import('../spells/execution/area-targeting.js').AreaShapeDefinition;
-    damageType: import('./attacks.js').DamageType;
+    damageType?: import('./attacks.js').DamageType;
   } | null;
 }

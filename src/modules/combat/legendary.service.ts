@@ -1,3 +1,4 @@
+import { beginCreatureAreaUse, publishCreatureAreaUse } from './creature-area.service.js';
 import { Prisma } from '@prisma/client';
 import type { z } from 'zod';
 import { HttpError } from '../../lib/http-error.js';
@@ -49,6 +50,16 @@ export async function useLegendaryAction(actor:CombatActor,input:z.infer<typeof 
    const ability=await chargeLegendary(db,combat,input);
    if(ability.execution!=='legendary-attack'||ability.legendaryAttackId!==attackId)throw new HttpError('O cadastro mudou. Atualize a janela lendária.',409,'CONFLICT');
   }});
+ }
+ if(definition?.execution==='area-save-damage') {
+  const result=await runCombatOperation(actor,input,'legendary-use',async(db,combat)=>{
+   const ability=await chargeLegendary(db,combat,input);
+   if(ability.execution!=='area-save-damage'||!input.areaPlacement)throw new HttpError('Posicione a área da opção lendária.',400,'AREA_PLACEMENT_REQUIRED');
+   const source=combat.combatants.find(c=>c.id===input.combatantId)!;
+   const areaUseId=await beginCreatureAreaUse(db,combat,source,ability,input.areaPlacement);
+   return {combat:toCombatDto(await loadCombatById(combat.id,db),'MASTER'),areaUseId};
+  });
+  await publishCreatureAreaUse(result.areaUseId);return result;
  }
  if(!input.confirmed)throw new HttpError('Confirme a resolução assistida desta opção lendária.',400,'LEGENDARY_CONFIRMATION_REQUIRED');
  return runCombatOperation(actor,input,'legendary-use',async(db,combat)=>{

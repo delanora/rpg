@@ -210,7 +210,7 @@ export function decideCombatDuel(combat: CombatDto, duelId: string, decision: 'a
   return api<{ combat: CombatDto }>('/api/combat/duels/decision', { method: 'POST', body: { ...operationFor(combat), duelId, decision } }).then(result => result.combat);
 }
 
-export function useLegendaryAction(combat:CombatDto,input:{windowId:string;combatantId:string;abilityId:string;targetCombatantId?:string;confirmed?:boolean}):Promise<CombatDto> {
+export function useLegendaryAction(combat:Pick<CombatDto,'id'|'version'>,input:{windowId:string;combatantId:string;abilityId:string;targetCombatantId?:string;areaPlacement?:import('../../../src/modules/shared/creature-abilities').CreatureAreaPlacement;operationId?:string;confirmed?:boolean}):Promise<CombatDto> {
  return api<{combat:CombatDto}>('/api/combat/legendary/use',{method:'POST',body:{...operationFor(combat),...input}}).then(result=>result.combat);
 }
 export function passLegendaryAction(combat:CombatDto,windowId:string,combatantId:string):Promise<CombatDto> {
